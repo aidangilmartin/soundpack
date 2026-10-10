@@ -1,10 +1,13 @@
 import { app, BrowserWindow, dialog, ipcMain, shell, type OpenDialogOptions } from 'electron'
 import { existsSync } from 'node:fs'
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { basename, dirname, join, normalize, sep } from 'node:path'
 import { sanitizeResourceName } from '../core/manifest'
-import { IPC, type ExportFile, type ExportMode, type ProjectFileSource } from '../shared/ipc'
-import { LabelStore, TemplateLibrary } from './library'
+import { IPC, type ExportFile, type ExportMode, type GameSettings, type ImportReport, type ProjectFileSource } from '../shared/ipc'
+import { bridgePath, devCodeWalkerPath, runBridge, type ExtractResult, type ListResult } from './bridge'
+import { detectGtaFolder, isCodeWalkerFolder, isGtaFolder } from './gamePaths'
+import { LabelStore, SettingsStore, TemplateLibrary } from './library'
 import { packProject, unpackProject, zipResource } from './projectFile'
 
 // Lets automated tests run against a throwaway profile.
@@ -15,6 +18,33 @@ const AUDIO_EXTENSIONS = ['wav', 'mp3', 'ogg', 'flac', 'm4a', 'aac', 'opus', 'we
 let win: BrowserWindow | null = null
 let library: TemplateLibrary
 let labels: LabelStore
+let settings: SettingsStore<{ gtaPath: string; codewalkerPath: string }>
+
+const bridgeExe = (): string => bridgePath({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath, appPath: app.getAppPath() })
+
+async function gameSettings(): Promise<GameSettings> {
+  const s = await settings.get()
+  const gtaPath = s.gtaPath ?? detectGtaFolder() ?? null
+  const devCw = app.isPackaged ? undefined : devCodeWalkerPath(app.getAppPath())
+  const codewalkerPath = s.codewalkerPath ?? devCw ?? null
+  return {
+    gtaPath,
+    gtaValid: !!gtaPath && isGtaFolder(gtaPath),
+    codewalkerPath,
+    codewalkerValid: !!codewalkerPath && isCodeWalkerFolder(codewalkerPath),
+    codewalkerIsDevBuild: !s.codewalkerPath && !!devCw,
+    bridgeAvailable: existsSync(bridgeExe())
+  }
+}
+
+async function gameArgs(): Promise<string[]> {
+  const s = await gameSettings()
+  if (!s.gtaValid) throw new Error('Choose your GTA V folder first (the one containing gta5.exe).')
+  if (!s.codewalkerValid) throw new Error('Choose your CodeWalker folder first (the one containing CodeWalker.Core.dll).')
+  return ['--codewalker', s.codewalkerPath!, '--gta', s.gtaPath!]
+}
+
+const progress = (message: string): void => win?.webContents.send(IPC.gameProgress, message)
 
 function createWindow(): void {
   win = new BrowserWindow({
@@ -172,6 +202,38 @@ function registerIpc(): void {
     return root
   })
 
+  ipcMain.handle(IPC.getGameSettings, () => gameSettings())
+
+  ipcMain.handle(IPC.setGamePath, async (_e, kind: 'gta' | 'codewalker', path?: string) => {
+    const title = kind === 'gta' ? 'Select your Grand Theft Auto V folder' : 'Select your CodeWalker folder'
+    const dir = path ?? (await pick({ title, properties: ['openDirectory'] }))[0]
+    if (!dir) return gameSettings()
+    if (kind === 'gta' && !isGtaFolder(dir)) throw new Error(`gta5.exe was not found in ${dir}.`)
+    if (kind === 'codewalker' && !isCodeWalkerFolder(dir)) throw new Error(`CodeWalker.Core.dll was not found in ${dir}.`)
+    await settings.update(kind === 'gta' ? { gtaPath: dir } : { codewalkerPath: dir })
+    return gameSettings()
+  })
+
+  ipcMain.handle(IPC.listGameBanks, async () => runBridge<ListResult>(bridgeExe(), ['list', ...(await gameArgs())], progress))
+
+  ipcMain.handle(IPC.extractGameBanks, async (_e, banks: string[]): Promise<ImportReport> => {
+    const args = await gameArgs()
+    const out = await mkdtemp(join(tmpdir(), 'gsm-extract-'))
+    try {
+      const result = await runBridge<ExtractResult>(
+        bridgeExe(),
+        ['extract', ...args, '--out', out, ...banks.flatMap((b) => ['--bank', b])],
+        progress
+      )
+      progress('Adding banks to your library')
+      const report = await library.importExtracted(result.extracted)
+      report.errors.push(...result.errors.map((e) => ({ name: `${e.pack}/${e.file}`, message: e.error })))
+      return report
+    } finally {
+      await rm(out, { recursive: true, force: true })
+    }
+  })
+
   ipcMain.handle(IPC.showInFolder, (_e, path: string) => shell.showItemInFolder(path))
   ipcMain.handle(IPC.openExternal, (_e, url: string) => {
     if (/^https:\/\//.test(url)) return shell.openExternal(url)
@@ -181,6 +243,7 @@ function registerIpc(): void {
 app.whenReady().then(() => {
   library = new TemplateLibrary(join(app.getPath('userData'), 'templates'))
   labels = new LabelStore(join(app.getPath('userData'), 'labels.json'))
+  settings = new SettingsStore(join(app.getPath('userData'), 'settings.json'))
   registerIpc()
   createWindow()
   app.on('activate', () => {

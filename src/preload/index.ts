@@ -15,6 +15,15 @@ const api: Api = {
   pathForFile: (file) => webUtils.getPathForFile(file),
   saveProject: (json, sources, path) => ipcRenderer.invoke(IPC.saveProject, json, sources, path),
   openProject: () => ipcRenderer.invoke(IPC.openProject),
+  getGameSettings: () => ipcRenderer.invoke(IPC.getGameSettings),
+  setGamePath: (kind, path) => ipcRenderer.invoke(IPC.setGamePath, kind, path),
+  listGameBanks: () => ipcRenderer.invoke(IPC.listGameBanks),
+  extractGameBanks: (banks) => ipcRenderer.invoke(IPC.extractGameBanks, banks),
+  onGameProgress: (listener) => {
+    const handler = (_e: Electron.IpcRendererEvent, message: string): void => listener(message)
+    ipcRenderer.on(IPC.gameProgress, handler)
+    return () => ipcRenderer.removeListener(IPC.gameProgress, handler)
+  },
   exportResource: (name, files, mode) => ipcRenderer.invoke(IPC.exportResource, name, files, mode),
   showInFolder: (path) => ipcRenderer.invoke(IPC.showInFolder, path),
   openExternal: (url) => ipcRenderer.invoke(IPC.openExternal, url)

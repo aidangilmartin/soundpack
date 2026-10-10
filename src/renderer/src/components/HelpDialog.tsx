@@ -14,11 +14,11 @@ export function HelpDialog({ onClose }: Props) {
         </header>
         <ol>
           <li>
-            <b>Import the original sound banks.</b> In OpenIV or CodeWalker, export the gun banks from{' '}
+            <b>Get the original sound banks.</b> Click <b>Extract from GTA V…</b>, point the app at your GTA V folder and your{' '}
+            <b>CodeWalker</b> folder, and pick the banks. The app uses CodeWalker's library to read and decrypt{' '}
             <span className="mono">x64/audio/sfx/WEAPONS_PLAYER.rpf</span> (your own gun) and <span className="mono">weapons.awc</span> from{' '}
-            <span className="mono">x64/audio/sfx/RESIDENT.rpf</span> (how other players and NPCs sound). If the app says a file is
-            encrypted, use CodeWalker's <b>Export XML</b> and import the <span className="mono">.awc.xml</span> file — its wav folder must
-            sit next to it.
+            <span className="mono">RESIDENT.rpf</span> (how other players and NPCs sound). You can also import{' '}
+            <span className="mono">.awc</span> or CodeWalker <span className="mono">.awc.xml</span> exports by hand.
           </li>
           <li>
             <b>Find the streams to replace.</b> Banks only store numeric ids, so listen: select a row and press Space. Sort by “longest” to

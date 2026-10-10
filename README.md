@@ -4,7 +4,7 @@ A desktop app for building **server-side FiveM gun sound packs**. Load GTA V's o
 
 ## What it does
 
-- **Imports the original sound banks** (`.awc`), exported with OpenIV or CodeWalker. Encrypted banks can be imported through CodeWalker's **Export XML** (`.awc.xml` plus its wav folder), which also brings readable stream names.
+- **Extracts the original sound banks straight from your GTA V install.** It uses [CodeWalker](https://github.com/dexyfex/CodeWalker)'s library to read and decrypt `WEAPONS_PLAYER.rpf` and `RESIDENT.rpf`, so you don't need to export anything by hand. You can still import `.awc` files or CodeWalker **Export XML** output (`.awc.xml` plus its wav folder) manually.
 - **Lets you audition every stream.** Banks only store numeric ids, so you find the shot bodies and tails by ear. Press Space to listen, sort by length, and give streams your own labels.
 - **Replaces streams** with WAV, MP3, OGG, FLAC or M4A, one stream at a time or many at once. A stereo file fills an L/R stream pair automatically. You can also silence streams or reset them.
 - **Shapes the audio:**
@@ -40,12 +40,17 @@ Bank names marked **?** in the app are inferred from file names. Listen to confi
 
 ## Getting the original banks
 
-The app never ships Rockstar's files. Export your own copies once and they stay in the app's library.
+The app never ships Rockstar's files or CodeWalker. It reads the banks from your own game, using your own copy of CodeWalker.
 
-1. In **OpenIV** or **CodeWalker**, open `x64/audio/sfx/WEAPONS_PLAYER.rpf` and export the gun banks you want.
-2. Open `x64/audio/sfx/RESIDENT.rpf` and export `weapons.awc`.
-3. Click **Import .awc…**, or drag the files onto the window.
-4. If the app reports a file as encrypted, use CodeWalker's **Export XML** on it instead. Then import the `.awc.xml` with **Import CodeWalker XML…**, keeping the wav folder CodeWalker created next to it.
+1. Download [CodeWalker](https://github.com/dexyfex/CodeWalker) and extract it somewhere.
+2. Click **Extract from GTA V…**.
+3. Check the GTA V folder. The app finds it automatically from FiveM's settings or the usual Steam, Rockstar and Epic folders. Otherwise pick the folder that contains `gta5.exe`.
+4. Pick your CodeWalker folder (the one containing `CodeWalker.Core.dll`).
+5. Click **Find gun banks**, keep the gun banks selected, and click **Extract**.
+
+Like CodeWalker itself, the app reads the decryption keys from your `gta5.exe`. Nothing in your game folder is changed. If the game has a newer copy of an archive inside `update/update.rpf`, that copy is used.
+
+If you'd rather export by hand, **Import .awc…** and **Import XML…** still work with files from OpenIV or CodeWalker.
 
 ## Installing a pack on a server
 
@@ -57,10 +62,11 @@ Test with a second client so you hear both your own shots and other players' sho
 
 ## Development
 
-Requires Node 22.
+Requires Node 22. Extracting from the game also needs the [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0) and git, to build the CodeWalker bridge.
 
 ```sh
 npm install
+npm run build:bridge # build the CodeWalker bridge (once, and after changing bridge/)
 npm run dev          # run the app with hot reload
 npm test             # unit tests (Vitest)
 npm run typecheck
@@ -72,6 +78,15 @@ Electron (v42+) no longer downloads its binary during install, so this project r
 
 To run the optional real-file round-trip tests, point `AWC_SAMPLES_DIR` at a folder of `.awc` files. These files are never committed.
 
+### CodeWalker bridge
+
+`bridge/` is a small .NET 8 command-line program the app runs to read game archives (`list` and `extract` commands, JSON output).
+
+- **Building.** `npm run build:bridge` fetches CodeWalker's source at a pinned commit into `bridge/.codewalker/` (git-ignored) and builds CodeWalker.Core. It then publishes the bridge as a self-contained executable in `resources/bridge/`, which electron-builder packages.
+- **CodeWalker is not bundled.** CodeWalker's source is released "for educational purposes only", so `CodeWalker.Core.dll` is a compile-time reference only. At runtime the bridge loads it, and its SharpDX dependencies, from the user's CodeWalker folder.
+- **In development** the app falls back to the CodeWalker.Core built in `bridge/.codewalker/runtime`.
+- **Tests.** The bridge integration and Electron tests build a fake GTA V folder with unencrypted RPF archives (`make-test-game`), including AWC-encrypted banks using a test key. They skip themselves when the bridge isn't built.
+
 ### Layout
 
 | Path | Contents |
@@ -80,7 +95,8 @@ To run the optional real-file round-trip tests, point `AWC_SAMPLES_DIR` at a fol
 | `src/core/awc/` | AWC reader/writer, peak data, IMA ADPCM decoding, stream replacement, CodeWalker XML import |
 | `src/core/dsp.ts` | Shaping pipeline (trim, fades, normalise, windowed-sinc resampling, dithered 16-bit) |
 | `src/core/build.ts` | Turns a project plus templates into the resource files |
-| `src/main/` | Electron main process: dialogs, template library, project files, export |
+| `src/main/` | Electron main process: dialogs, template library, project files, export, CodeWalker bridge runner |
+| `bridge/` | .NET 8 CodeWalker bridge that lists and extracts banks from the game's RPF archives |
 | `src/preload/` | `window.api` bridge (context isolation, sandboxed renderer) |
 | `src/renderer/` | React UI |
 

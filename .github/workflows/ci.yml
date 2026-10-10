@@ -14,9 +14,14 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
       - run: npm ci
       - run: npm run format:check
       - run: npm run typecheck
+      - name: Build CodeWalker bridge
+        run: npm run build:bridge
       - run: npm test
       - run: npm run build
       - name: Electron smoke test
@@ -32,6 +37,9 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
       - run: npm ci
       - run: npm run dist:win
         env:

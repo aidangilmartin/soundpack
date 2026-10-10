@@ -285,6 +285,9 @@ button:focus-visible,
   min-height: 0;
   background: var(--bg-raised);
 }
+.import-row .btn.small {
+  margin-left: 0;
+}
 .sidebar-actions {
   padding: 12px;
   display: flex;
@@ -619,4 +622,67 @@ table.streams {
 }
 .warnings li {
   color: var(--warn);
+}
+
+/* extract from game */
+.modal.wide {
+  width: min(760px, 94vw);
+}
+.path-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 12px;
+  background: var(--bg-sunken);
+  border-radius: var(--radius);
+}
+.path-row > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.field-title {
+  font-weight: 600;
+  font-size: 12px;
+}
+.path {
+  overflow-wrap: anywhere;
+}
+.game-banks {
+  max-height: 320px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px 12px;
+}
+.game-banks section {
+  margin-top: 8px;
+}
+.game-banks ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2px 16px;
+}
+.game-banks label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+  min-width: 0;
+}
+.game-banks label > span:nth-child(2) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.grow {
+  flex: 1;
+}
+a {
+  color: var(--accent);
 }

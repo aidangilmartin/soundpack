@@ -10,3 +10,9 @@ playwright-report/
 *.awc
 !src/**/fixtures/*.awc
 *.tsbuildinfo
+
+# CodeWalker bridge build outputs
+bridge/.codewalker/
+bridge/bin/
+bridge/obj/
+resources/bridge/

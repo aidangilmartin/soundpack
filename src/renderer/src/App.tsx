@@ -24,6 +24,7 @@ import type { ExportMode, ImportReport, LibraryTemplate, PickedFile } from '@sha
 import { decodeAudio, player } from './audio'
 import { BankView } from './components/BankView'
 import { ExportDialog } from './components/ExportDialog'
+import { GameDialog } from './components/GameDialog'
 import { HelpDialog } from './components/HelpDialog'
 import { Inspector } from './components/Inspector'
 import { Sidebar } from './components/Sidebar'
@@ -47,7 +48,7 @@ export function App() {
   const [labels, setLabels] = useState<Record<string, string>>({})
   const [playing, setPlaying] = useState<string | null>(null)
   const [toast, setToast] = useState<Toast | null>(null)
-  const [dialog, setDialog] = useState<'export' | 'help' | null>(null)
+  const [dialog, setDialog] = useState<'export' | 'help' | 'game' | null>(null)
   const toastTimer = useRef<number | undefined>(undefined)
 
   const notify = useCallback((kind: Toast['kind'], text: string) => {
@@ -398,6 +399,7 @@ export function App() {
           items={items}
           activeKey={activeKey}
           onSelect={selectBank}
+          onExtractFromGame={() => setDialog('game')}
           onImportAwc={() => void importAwc()}
           onImportCodeWalker={() => void importCodeWalker()}
         />
@@ -418,6 +420,7 @@ export function App() {
             }}
             onPlay={play}
             onDropFiles={(files, ids) => void dropFilesOnStreams(files, ids)}
+            onExtractFromGame={() => setDialog('game')}
             onImportAwc={() => void importAwc()}
             onImportCodeWalker={() => void importCodeWalker()}
             onRemoveTemplate={() => void removeTemplate()}
@@ -426,11 +429,20 @@ export function App() {
         ) : (
           <section className="bank-view empty-state">
             <h2>Build a gun sound pack</h2>
-            <p>Pick a sound bank on the left, import your copy of it once, then replace its sounds with your own.</p>
+            <p>
+              Pull the original gun sound banks from your GTA V install, replace their sounds with your own, and export a FiveM resource.
+            </p>
             <p className="muted small">Exports a server-side FiveM resource — players download the sounds when they join.</p>
-            <button className="btn" onClick={() => setDialog('help')}>
-              How it works
-            </button>
+            <div className="row gap">
+              {library.length === 0 && (
+                <button className="btn primary" onClick={() => setDialog('game')}>
+                  Extract from GTA V…
+                </button>
+              )}
+              <button className="btn" onClick={() => setDialog('help')}>
+                How it works
+              </button>
+            </div>
           </section>
         )}
         {activeTemplate && activeItem ? (
@@ -475,6 +487,7 @@ export function App() {
         />
       )}
       {dialog === 'help' && <HelpDialog onClose={() => setDialog(null)} />}
+      {dialog === 'game' && <GameDialog library={library} onImported={handleReport} onClose={() => setDialog(null)} />}
     </div>
   )
 }

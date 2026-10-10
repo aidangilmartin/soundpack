@@ -5,25 +5,35 @@ interface Props {
   items: BankItem[]
   activeKey: string | null
   onSelect: (item: BankItem) => void
+  onExtractFromGame: () => void
   onImportAwc: () => void
   onImportCodeWalker: () => void
 }
 
 const ORDER: BankCategory[] = ['shared', 'pistol', 'smg', 'rifle', 'shotgun', 'sniper', 'mg', 'heavy', 'other']
 
-export function Sidebar({ items, activeKey, onSelect, onImportAwc, onImportCodeWalker }: Props) {
+export function Sidebar({ items, activeKey, onSelect, onExtractFromGame, onImportAwc, onImportCodeWalker }: Props) {
   const imported = items.filter((i) => i.template).length
   return (
     <aside className="sidebar">
       <div className="sidebar-actions">
-        <button className="btn" onClick={onImportAwc} title="Import .awc files exported with OpenIV or CodeWalker">
-          Import .awc…
+        <button className="btn primary" onClick={onExtractFromGame} title="Read the original banks from your GTA V install with CodeWalker">
+          Extract from GTA V…
         </button>
-        <button className="btn" onClick={onImportCodeWalker} title="Import CodeWalker 'Export XML' output (.awc.xml + wav folder)">
-          Import CodeWalker XML…
-        </button>
+        <div className="row gap import-row">
+          <button className="btn subtle small" onClick={onImportAwc} title="Import .awc files you exported yourself">
+            Import .awc…
+          </button>
+          <button
+            className="btn subtle small"
+            onClick={onImportCodeWalker}
+            title="Import CodeWalker 'Export XML' output (.awc.xml + wav folder)"
+          >
+            Import XML…
+          </button>
+        </div>
         <p className="muted small">
-          {imported} bank{imported === 1 ? '' : 's'} imported. Drop .awc or .awc.xml files anywhere.
+          {imported} bank{imported === 1 ? '' : 's'} in your library.
         </p>
       </div>
       <nav className="bank-list" aria-label="Sound banks">

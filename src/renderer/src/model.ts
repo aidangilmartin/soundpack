@@ -107,3 +107,9 @@ export const fmtDuration = (sec: number): string => (sec < 10 ? `${sec.toFixed(2
 export const fmtRate = (hz: number): string => `${(hz / 1000).toFixed(hz % 1000 === 0 ? 0 : 1)} kHz`
 export const fmtBytes = (n: number): string =>
   n > 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`
+
+/** Strips Electron's "Error invoking remote method 'x': Error: " wrapper from IPC errors. */
+export function cleanError(e: unknown): string {
+  const msg = e instanceof Error ? e.message : String(e)
+  return msg.replace(/^Error invoking remote method '[^']+': /, '').replace(/^(\w*Error): /, '')
+}

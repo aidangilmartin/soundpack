@@ -143,6 +143,28 @@ export class TemplateLibrary {
     return report
   }
 
+  /** Banks the CodeWalker bridge extracted from the game (already unencrypted). */
+  async importExtracted(items: { pack: string; file: string; path: string; names: Record<string, string> }[]): Promise<ImportReport> {
+    const report: ImportReport = { imported: [], errors: [], warnings: [] }
+    for (const item of items) {
+      try {
+        const awc = parseAwc(new Uint8Array(await readFile(item.path)))
+        const names: Record<number, string> = {}
+        for (const [id, name] of Object.entries(item.names)) names[Number(id) & 0x1fffffff] = name
+        const t = await this.store(item.pack, item.file, writeAwc(awc), {
+          importedAt: new Date().toISOString(),
+          origin: 'gta',
+          streamCount: awc.streams.length,
+          names: Object.keys(names).length ? names : ((await this.readMeta(item.pack, item.file))?.names ?? {})
+        })
+        report.imported.push(t)
+      } catch (e) {
+        report.errors.push({ name: `${item.pack}/${item.file}`, message: (e as Error).message })
+      }
+    }
+    return report
+  }
+
   async read(pack: string, file: string): Promise<TemplateData> {
     const p = this.paths(pack, file)
     return { bytes: new Uint8Array(await readFile(p.awc)), names: (await this.readMeta(pack, file))?.names ?? {} }
@@ -163,6 +185,26 @@ export class TemplateLibrary {
     await rename(from.awc, to.awc)
     if (existsSync(from.meta)) await rename(from.meta, to.meta)
     return this.describe(newPack, normalizeFileName(file))
+  }
+}
+
+/** Small JSON settings file (GTA V and CodeWalker folders). */
+export class SettingsStore<T extends object> {
+  constructor(readonly path: string) {}
+
+  async get(): Promise<Partial<T>> {
+    try {
+      return JSON.parse(await readFile(this.path, 'utf8')) as Partial<T>
+    } catch {
+      return {}
+    }
+  }
+
+  async update(patch: Partial<T>): Promise<Partial<T>> {
+    const next = { ...(await this.get()), ...patch }
+    await mkdir(dirname(this.path), { recursive: true })
+    await writeFile(this.path, JSON.stringify(next, null, 1))
+    return next
   }
 }
 

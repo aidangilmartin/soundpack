@@ -17,6 +17,7 @@ interface Props {
   onSelect: (ids: number[], focus: number | null) => void
   onPlay: (id: number, which: 'original' | 'new') => void
   onDropFiles: (files: File[], ids: number[]) => void
+  onExtractFromGame: () => void
   onImportAwc: () => void
   onImportCodeWalker: () => void
   onRemoveTemplate: () => void
@@ -55,26 +56,23 @@ export function BankView(props: Props) {
         <p className="muted mono">
           {item.pack}/{item.file}
         </p>
-        <p>This sound bank isn't imported yet. The app never ships game files — import your own copy once and it stays in your library.</p>
-        <ol className="steps">
-          <li>
-            Open GTA V in <b>OpenIV</b> or <b>CodeWalker</b> and browse to{' '}
-            <span className="mono">{item.pack === 'resident' ? 'x64/audio/sfx/RESIDENT.rpf' : 'x64/audio/sfx/WEAPONS_PLAYER.rpf'}</span>.
-          </li>
-          <li>
-            Export <span className="mono">{item.file}</span> (OpenIV: Export, CodeWalker: Export Raw), or use CodeWalker <b>Export XML</b>{' '}
-            if the file is encrypted.
-          </li>
-          <li>Import it here.</li>
-        </ol>
+        <p>This sound bank isn't in your library yet. The app never ships game files — it reads them from your own GTA V install.</p>
         <div className="row gap">
-          <button className="btn primary" onClick={props.onImportAwc}>
-            Import .awc…
-          </button>
-          <button className="btn" onClick={props.onImportCodeWalker}>
-            Import CodeWalker XML…
+          <button className="btn primary" onClick={props.onExtractFromGame}>
+            Extract from GTA V…
           </button>
         </div>
+        <p className="muted small">
+          Uses CodeWalker to read{' '}
+          <span className="mono">{item.pack === 'resident' ? 'x64/audio/sfx/RESIDENT.rpf' : 'x64/audio/sfx/WEAPONS_PLAYER.rpf'}</span>{' '}
+          directly. Already exported <span className="mono">{item.file}</span> yourself?{' '}
+          <button className="btn subtle small" onClick={props.onImportAwc}>
+            Import .awc…
+          </button>
+          <button className="btn subtle small" onClick={props.onImportCodeWalker}>
+            Import CodeWalker XML…
+          </button>
+        </p>
       </section>
     )
   }
@@ -154,7 +152,11 @@ export function BankView(props: Props) {
           </h2>
           <p className="muted mono small">
             audio/sfx/{item.pack}/{item.file} · {template.summaries.length} streams ·{' '}
-            {item.template.origin === 'codewalker-xml' ? 'from CodeWalker XML' : 'from .awc'}
+            {item.template.origin === 'gta'
+              ? 'from your game'
+              : item.template.origin === 'codewalker-xml'
+                ? 'from CodeWalker XML'
+                : 'from .awc'}
           </p>
           {item.note && <p className="note small">{item.note}</p>}
         </div>

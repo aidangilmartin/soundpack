@@ -6,7 +6,7 @@ export interface LibraryTemplate {
   streamCount: number
   sizeBytes: number
   importedAt: string
-  origin: 'awc' | 'codewalker-xml'
+  origin: 'awc' | 'codewalker-xml' | 'gta'
   hasNames: boolean
 }
 
@@ -19,6 +19,31 @@ export interface ImportReport {
   imported: LibraryTemplate[]
   errors: { name: string; message: string }[]
   warnings: string[]
+}
+
+export interface GameSettings {
+  gtaPath: string | null
+  gtaValid: boolean
+  codewalkerPath: string | null
+  codewalkerValid: boolean
+  /** True when using the CodeWalker.Core built by `npm run build:bridge` (development only). */
+  codewalkerIsDevBuild: boolean
+  bridgeAvailable: boolean
+}
+
+export interface GameInfo {
+  gtaPath: string
+  exe: string
+  gen9: boolean
+  codeWalkerVersion: string | null
+  keysLoaded: boolean
+}
+
+export interface GameBank {
+  pack: string
+  file: string
+  size: number
+  archive: string
 }
 
 export interface PickedFile {
@@ -66,6 +91,14 @@ export interface Api {
   saveProject(json: string, sources: ProjectFileSource[], path: string | null): Promise<string | null>
   openProject(): Promise<OpenedProject | null>
 
+  getGameSettings(): Promise<GameSettings>
+  /** Opens a folder dialog (or uses `path`) and stores the GTA V / CodeWalker folder. */
+  setGamePath(kind: 'gta' | 'codewalker', path?: string): Promise<GameSettings>
+  listGameBanks(): Promise<{ game: GameInfo; banks: GameBank[] }>
+  /** Extracts banks ("pack/file") from the game into the template library. */
+  extractGameBanks(banks: string[]): Promise<ImportReport>
+  onGameProgress(listener: (message: string) => void): () => void
+
   exportResource(resourceName: string, files: ExportFile[], mode: ExportMode): Promise<string | null>
   showInFolder(path: string): Promise<void>
   openExternal(url: string): Promise<void>
@@ -84,6 +117,11 @@ export const IPC = {
   readFiles: 'files:read',
   saveProject: 'project:save',
   openProject: 'project:open',
+  getGameSettings: 'game:settings',
+  setGamePath: 'game:set-path',
+  listGameBanks: 'game:list',
+  extractGameBanks: 'game:extract',
+  gameProgress: 'game:progress',
   exportResource: 'export:resource',
   showInFolder: 'shell:show',
   openExternal: 'shell:external'
