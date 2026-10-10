@@ -76,6 +76,26 @@ export class Player {
     this.set(tag)
   }
 
+  /** Plays an already rendered (stereo) buffer, e.g. a gunshot preview. */
+  playBuffer(tag: string, rendered: AudioBuffer): void {
+    this.stop()
+    this.ctx ??= new AudioContext()
+    const buffer = this.ctx.createBuffer(rendered.numberOfChannels, rendered.length, rendered.sampleRate)
+    for (let c = 0; c < rendered.numberOfChannels; c++) buffer.copyToChannel(rendered.getChannelData(c), c)
+    const node = this.ctx.createBufferSource()
+    node.buffer = buffer
+    node.connect(this.ctx.destination)
+    node.onended = () => {
+      if (this.node === node) {
+        this.node = null
+        this.set(null)
+      }
+    }
+    this.node = node
+    node.start()
+    this.set(tag)
+  }
+
   toggle(tag: string, samples: Float32Array | Int16Array, sampleRate: number): void {
     if (this.playing === tag) this.stop()
     else this.play(tag, samples, sampleRate)

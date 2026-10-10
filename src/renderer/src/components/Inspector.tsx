@@ -4,29 +4,32 @@ import { getFormat } from '@core/awc/types'
 import { ChannelMode, shapeAudio, ShapeSettings } from '@core/dsp'
 import { hex8 } from '@core/hash'
 import { pairOf } from '@core/pairs'
-import { bankKey, type ProjectBank } from '@core/project'
-import { assignmentMap, fmtDuration, labelKey, LoadedTemplate, pairsFor, SourceEntry, streamName } from '../model'
+import { bankKey, findAssignment, findBank, type Project, type StreamRef } from '@core/project'
+import { fmtDuration, labelKey, LoadedTemplate, pairsFor, refKey, SourceEntry, streamName } from '../model'
 import { Waveform } from './Waveform'
 
 interface Props {
-  template: LoadedTemplate
-  bank: ProjectBank | undefined
-  selection: number[]
-  focusId: number | null
+  templates: Map<string, LoadedTemplate>
+  project: Project
+  refs: StreamRef[]
+  focus: StreamRef | null
   labels: Record<string, string>
   sources: Map<string, SourceEntry>
   playing: string | null
-  onPlay: (id: number, which: 'original' | 'new') => void
-  onAssign: (sourceId: string, ids: number[]) => void
+  /** Shown above the controls (e.g. what an assignment will also apply to). */
+  context?: ReactNode
+  emptyHint?: ReactNode
+  onPlay: (ref: StreamRef, which: 'original' | 'new') => void
+  onAssign: (sourceId: string, refs: StreamRef[]) => void
   onAddSources: () => Promise<SourceEntry[]>
-  onDropFiles: (files: File[], ids: number[]) => void
-  onSilence: (ids: number[]) => void
-  onReset: (ids: number[]) => void
-  onShape: (ids: number[], patch: Partial<ShapeSettings>) => void
-  onChannel: (id: number, channel: ChannelMode) => void
-  onLink: (left: number, right: number) => void
-  onUnlink: (id: number) => void
-  onLabel: (id: number, label: string) => void
+  onDropFiles: (files: File[], refs: StreamRef[]) => void
+  onSilence: (refs: StreamRef[]) => void
+  onReset: (refs: StreamRef[]) => void
+  onShape: (refs: StreamRef[], patch: Partial<ShapeSettings>) => void
+  onChannel: (ref: StreamRef, channel: ChannelMode) => void
+  onLink: (left: StreamRef, right: StreamRef) => void
+  onUnlink: (ref: StreamRef) => void
+  onLabel: (ref: StreamRef, label: string) => void
 }
 
 function Field({ label, children, hint }: { label: string; children: ReactNode; hint?: string }) {
@@ -75,11 +78,9 @@ function NumberInput(props: {
 }
 
 export function Inspector(props: Props) {
-  const { template, bank, selection, focusId, sources, playing } = props
+  const { templates, project, refs, sources, playing } = props
   const [sourceId, setSourceId] = useState<string>('')
   const [dragging, setDragging] = useState(false)
-  const assignments = useMemo(() => assignmentMap(bank), [bank])
-  const pairs = useMemo(() => pairsFor(template, bank), [template, bank])
   const sourceList = [...sources.values()]
 
   useEffect(() => {
@@ -88,25 +89,27 @@ export function Inspector(props: Props) {
     setSourceId(last ? last.info.id : '')
   }, [sources, sourceId])
 
-  const focus = focusId !== null && selection.includes(focusId) ? focusId : (selection[0] ?? null)
-  const stream = focus !== null ? template.byId.get(focus) : undefined
+  const focus = props.focus && refs.some((r) => refKey(r) === refKey(props.focus!)) ? props.focus : (refs[0] ?? null)
+  const template = focus ? templates.get(bankKey(focus.pack, focus.file)) : undefined
+  const stream = focus ? template?.byId.get(focus.streamId) : undefined
   const fmt = stream ? getFormat(stream) : undefined
-  const assignment = focus !== null ? assignments.get(focus) : undefined
-  const replaceSel = selection.filter((id) => assignments.get(id)?.action === 'replace')
-  const shapeOwner = assignment?.action === 'replace' ? assignment : replaceSel.length ? assignments.get(replaceSel[0]) : undefined
+  const assignment = focus ? findAssignment(project, focus) : undefined
+  const replaceSel = refs.filter((r) => findAssignment(project, r)?.action === 'replace')
+  const shapeOwner = assignment?.action === 'replace' ? assignment : replaceSel.length ? findAssignment(project, replaceSel[0]) : undefined
   const shape = shapeOwner?.shape
+  const single = refs.length === 1
 
   const original = useMemo(() => {
-    if (!stream || selection.length !== 1) return null
+    if (!stream || !single) return null
     try {
       return decodeStreamPcm(stream)
     } catch {
       return null
     }
-  }, [stream, selection.length])
+  }, [stream, single])
 
   const preview = useMemo(() => {
-    if (selection.length !== 1 || !assignment || assignment.action !== 'replace' || !fmt) return null
+    if (!single || !assignment || assignment.action !== 'replace' || !fmt) return null
     const src = assignment.sourceId ? sources.get(assignment.sourceId) : undefined
     if (!src) return null
     try {
@@ -114,33 +117,41 @@ export function Inspector(props: Props) {
     } catch (e) {
       return { error: (e as Error).message }
     }
-  }, [assignment, fmt, sources, selection.length])
+  }, [assignment, fmt, sources, single])
 
-  if (selection.length === 0) {
+  if (refs.length === 0) {
     return (
       <aside className="inspector">
         <div className="inspector-empty muted">
-          <p>Select one or more streams to replace them.</p>
-          <p className="small">
-            Tip: sort by “longest” — gunshot bodies and tails are usually the longest streams. Press Space to audition.
-          </p>
+          {props.emptyHint ?? (
+            <>
+              <p>Select one or more streams to replace them.</p>
+              <p className="small">
+                Tip: sort by “longest” — gunshot bodies and tails are usually the longest streams. Press Space to audition.
+              </p>
+            </>
+          )}
         </div>
       </aside>
     )
   }
 
-  const pair = focus !== null ? pairOf(pairs, focus) : undefined
-  const manualPair = focus !== null && bank?.manualPairs.some((p) => p.left === focus || p.right === focus)
-  const name = focus !== null ? streamName(template, focus, props.labels) : ''
-  const label = focus !== null ? (props.labels[labelKey(template.pack, template.file, focus)] ?? '') : ''
+  const bank = focus ? findBank(project, focus.pack, focus.file) : undefined
+  const pairs = template ? pairsFor(template, bank) : []
+  const pair = focus ? pairOf(pairs, focus.streamId) : undefined
+  const manualPair = focus && bank?.manualPairs.some((p) => p.left === focus.streamId || p.right === focus.streamId)
+  const name = focus && template ? streamName(template, focus.streamId, props.labels) : focus ? `0x${hex8(focus.streamId)}` : ''
+  const label = focus ? (props.labels[labelKey(focus.pack, focus.file, focus.streamId)] ?? '') : ''
   const src = assignment?.sourceId ? sources.get(assignment.sourceId) : undefined
+  const sameBank = refs.length === 2 && bankKey(refs[0].pack, refs[0].file) === bankKey(refs[1].pack, refs[1].file)
+  const playTag = (which: 'orig' | 'new'): string => (focus ? `${which}:${bankKey(focus.pack, focus.file)}:${focus.streamId}` : '')
 
   const onDrop = (e: DragEvent): void => {
     e.preventDefault()
     e.stopPropagation()
     setDragging(false)
     const files = [...e.dataTransfer.files]
-    if (files.length) props.onDropFiles(files, selection)
+    if (files.length) props.onDropFiles(files, refs)
   }
 
   const set = (patch: Partial<ShapeSettings>): void => props.onShape(replaceSel, patch)
@@ -148,14 +159,17 @@ export function Inspector(props: Props) {
   return (
     <aside className="inspector">
       <section className="panel">
-        {selection.length === 1 && focus !== null ? (
+        {single && focus ? (
           <>
-            <h3 title={`0x${hex8(focus)}`}>{name}</h3>
+            <h3 title={`${focus.pack}/${focus.file} · 0x${hex8(focus.streamId)}`}>{name}</h3>
+            <p className="muted small mono">
+              {focus.pack}/{focus.file}
+            </p>
             <Field label="Label" hint="Your own name for this stream, saved on this computer">
               <input
-                key={focus}
+                key={refKey(focus)}
                 defaultValue={label}
-                placeholder={template.names[focus] ?? 'e.g. shot close 1'}
+                placeholder={template?.names[focus.streamId] ?? 'e.g. shot close 1'}
                 onBlur={(e) => e.target.value !== label && props.onLabel(focus, e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
               />
@@ -168,18 +182,19 @@ export function Inspector(props: Props) {
             )}
             <div className="wave-row">
               <button
-                className={`icon-btn${playing === `orig:${bankKey(template.pack, template.file)}:${focus}` ? ' playing' : ''}`}
+                className={`icon-btn${playing === playTag('orig') ? ' playing' : ''}`}
                 onClick={() => props.onPlay(focus, 'original')}
                 aria-label="Play original"
               >
-                {playing === `orig:${bankKey(template.pack, template.file)}:${focus}` ? '■' : '▶'}
+                {playing === playTag('orig') ? '■' : '▶'}
               </button>
               <Waveform samples={original?.pcm ?? null} label="Original" />
             </div>
           </>
         ) : (
-          <h3>{selection.length} streams selected</h3>
+          <h3>{refs.length} streams selected</h3>
         )}
+        {props.context}
       </section>
 
       <section
@@ -201,8 +216,8 @@ export function Inspector(props: Props) {
               </option>
             ))}
           </select>
-          <button className="btn primary" disabled={!sourceId} onClick={() => props.onAssign(sourceId, selection)}>
-            Assign{selection.length > 1 ? ` to ${selection.length}` : ''}
+          <button className="btn primary" disabled={!sourceId} onClick={() => props.onAssign(sourceId, refs)}>
+            Assign{refs.length > 1 ? ` to ${refs.length}` : ''}
           </button>
         </div>
         <div className="row gap">
@@ -215,10 +230,10 @@ export function Inspector(props: Props) {
           >
             Add sound…
           </button>
-          <button className="btn" onClick={() => props.onSilence(selection)} title="Replace with a tiny silent sound">
+          <button className="btn" onClick={() => props.onSilence(refs)} title="Replace with a tiny silent sound">
             Silence
           </button>
-          <button className="btn subtle" onClick={() => props.onReset(selection)} disabled={!selection.some((id) => assignments.has(id))}>
+          <button className="btn subtle" onClick={() => props.onReset(refs)} disabled={!refs.some((r) => findAssignment(project, r))}>
             Reset to original
           </button>
         </div>
@@ -228,9 +243,9 @@ export function Inspector(props: Props) {
       {shape && (
         <section className="panel">
           <h4>Shaping{replaceSel.length > 1 ? ` · ${replaceSel.length} streams` : ''}</h4>
-          {selection.length === 1 && src && src.info.channels > 1 && !pair && (
+          {single && focus && src && src.info.channels > 1 && !pair && (
             <Field label="Channel">
-              <select value={shape.channel} onChange={(e) => props.onChannel(focus!, e.target.value as ChannelMode)}>
+              <select value={shape.channel} onChange={(e) => props.onChannel(focus, e.target.value as ChannelMode)}>
                 <option value="mix">Mix to mono</option>
                 <option value="left">Left only</option>
                 <option value="right">Right only</option>
@@ -310,7 +325,7 @@ export function Inspector(props: Props) {
                 value={String(shape.sampleRate)}
                 onChange={(e) => set({ sampleRate: e.target.value === 'template' ? 'template' : Number(e.target.value) })}
               >
-                <option value="template">Original{fmt && selection.length === 1 ? ` (${fmt.sampleRate} Hz)` : ''}</option>
+                <option value="template">Original{fmt && single ? ` (${fmt.sampleRate} Hz)` : ''}</option>
                 <option value="32000">32000 Hz</option>
                 <option value="44100">44100 Hz</option>
                 <option value="48000">48000 Hz</option>
@@ -345,7 +360,7 @@ export function Inspector(props: Props) {
         </section>
       )}
 
-      {preview && focus !== null && (
+      {preview && focus && (
         <section className="panel">
           <h4>Result</h4>
           {'error' in preview ? (
@@ -354,11 +369,11 @@ export function Inspector(props: Props) {
             <>
               <div className="wave-row">
                 <button
-                  className={`icon-btn${playing === `new:${bankKey(template.pack, template.file)}:${focus}` ? ' playing' : ''}`}
+                  className={`icon-btn${playing === playTag('new') ? ' playing' : ''}`}
                   onClick={() => props.onPlay(focus, 'new')}
                   aria-label="Play result"
                 >
-                  {playing === `new:${bankKey(template.pack, template.file)}:${focus}` ? '■' : '▶'}
+                  {playing === playTag('new') ? '■' : '▶'}
                 </button>
                 <Waveform samples={preview.pcm} tone="new" label="New" />
               </div>
@@ -373,22 +388,24 @@ export function Inspector(props: Props) {
 
       <section className="panel">
         <h4>Stereo pair</h4>
-        {pair ? (
+        {pair && focus && template ? (
           <p className="small">
             {pair.side === 'left' ? 'Left' : 'Right'} side of a pair with{' '}
             <b>{streamName(template, pair.side === 'left' ? pair.pair.right : pair.pair.left, props.labels)}</b>.
             {manualPair && (
-              <button className="btn subtle small" onClick={() => props.onUnlink(focus!)}>
+              <button className="btn subtle small" onClick={() => props.onUnlink(focus)}>
                 Unlink
               </button>
             )}
           </p>
-        ) : selection.length === 2 ? (
-          <button className="btn" onClick={() => props.onLink(selection[0], selection[1])}>
-            Link as L/R pair ({streamName(template, selection[0], props.labels)} = left)
+        ) : sameBank ? (
+          <button className="btn" onClick={() => props.onLink(refs[0], refs[1])}>
+            Link as L/R pair (
+            {template ? streamName(templates.get(bankKey(refs[0].pack, refs[0].file)) ?? template, refs[0].streamId, props.labels) : ''} =
+            left)
           </button>
         ) : (
-          <p className="muted small">Select two streams to link them as a left/right pair.</p>
+          <p className="muted small">Select two streams of the same bank to link them as a left/right pair.</p>
         )}
       </section>
     </aside>

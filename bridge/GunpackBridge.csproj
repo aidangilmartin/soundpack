@@ -8,21 +8,25 @@
     <AssemblyName>gunpack-bridge</AssemblyName>
     <RootNamespace>GunpackBridge</RootNamespace>
     <InvariantGlobalization>true</InvariantGlobalization>
+    <AllowedReferenceRelatedFileExtensions>.none</AllowedReferenceRelatedFileExtensions>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
     <!-- CodeWalker.Core built by scripts/build-bridge.mjs from a pinned commit (see CODEWALKER_COMMIT there). -->
     <CodeWalkerRuntime Condition="'$(CodeWalkerRuntime)' == ''">$(MSBuildThisFileDirectory).codewalker/runtime/</CodeWalkerRuntime>
   </PropertyGroup>
 
   <ItemGroup>
-    <!--
-      Compile-time only. CodeWalker's source is "released for educational purposes only", so it is
-      never shipped with this app: at runtime CodeWalker.Core.dll (and its SharpDX dependencies) are
-      loaded from the user's own CodeWalker folder (see CodeWalkerLoader).
-    -->
+    <!-- CodeWalker by dexyfex, bundled into the bridge. See THIRD_PARTY_NOTICES.md. -->
     <Reference Include="CodeWalker.Core">
       <HintPath>$(CodeWalkerRuntime)CodeWalker.Core.dll</HintPath>
-      <Private>false</Private>
     </Reference>
+    <Reference Include="SharpDX">
+      <HintPath>$(CodeWalkerRuntime)SharpDX.dll</HintPath>
+    </Reference>
+    <Reference Include="SharpDX.Mathematics">
+      <HintPath>$(CodeWalkerRuntime)SharpDX.Mathematics.dll</HintPath>
+    </Reference>
+    <!-- CodeWalker's list of known names, used to label streams -->
+    <None Include="$(CodeWalkerRuntime)strings.txt" Link="strings.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
   </ItemGroup>
 
 </Project>

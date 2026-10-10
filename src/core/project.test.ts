@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_SHAPE } from './dsp'
 import {
+  assignAcross,
   assignSource,
+  clearAcross,
+  findAssignment,
+  silenceAcross,
+  updateShapeAcross,
   clearStreams,
   findBank,
   linkPair,
@@ -71,5 +76,26 @@ describe('project', () => {
     expect(p.resourceName).toBe('my_gunpack')
     expect(() => parseProject('{}')).toThrow()
     expect(() => parseProject(JSON.stringify({ version: 99, banks: [] }))).toThrow(/newer/)
+  })
+})
+
+describe('cross-bank helpers', () => {
+  it('assigns, shapes, silences and clears streams in several banks at once', () => {
+    const targets = [
+      { pack: 'weapons_player', file: 'ptl_pistol.awc', streamId: 1 },
+      { pack: 'weapons_player', file: 'ptl_pistol.awc', streamId: 2 },
+      { pack: 'resident', file: 'weapons.awc', streamId: 1 }
+    ]
+    let p = assignAcross(newProject(), targets, mono, DEFAULT_SHAPE)
+    expect(p.banks.map((b) => [b.pack, b.assignments.length])).toEqual([
+      ['weapons_player', 2],
+      ['resident', 1]
+    ])
+    p = updateShapeAcross(p, targets, { gainDb: -6 })
+    expect(findAssignment(p, targets[2])!.shape.gainDb).toBe(-6)
+    p = silenceAcross(p, [targets[0]])
+    expect(findAssignment(p, targets[0])!.action).toBe('silence')
+    p = clearAcross(p, targets)
+    expect(p.banks).toEqual([])
   })
 })

@@ -3,7 +3,7 @@ using CodeWalker.GameFiles;
 
 namespace GunpackBridge;
 
-/// <summary>Game access through CodeWalker.Core. Only called after CodeWalkerLoader.Install.</summary>
+/// <summary>Game access through CodeWalker.Core.</summary>
 public static class Commands
 {
     /// <summary>Wave packs gun sound packs replace, and where the game keeps them.</summary>
@@ -51,22 +51,9 @@ public static class Commands
 
         foreach (var (pack, rpf, entry) in found)
         {
-            Output.Progress($"Extracting {pack}/{entry.NameLower}");
             try
             {
-                var data = rpf.ExtractFile(entry) ?? throw new BridgeException("error", "Could not read the file from the archive.");
-                var awc = new AwcFile();
-                awc.Load(data, entry);
-                if (!string.IsNullOrEmpty(awc.ErrorMessage)) throw new BridgeException("error", awc.ErrorMessage);
-                if (awc.MultiChannelFlag) throw new BridgeException("error", "Multi-channel stream banks are not supported.");
-
-                var encrypted = awc.WholeFileEncrypted || awc.SingleChannelEncryptFlag;
-                var bytes = encrypted ? SaveDecrypted(awc) : data;
-                var dir = Path.Combine(outDir, pack);
-                Directory.CreateDirectory(dir);
-                var path = Path.Combine(dir, entry.NameLower);
-                File.WriteAllBytes(path, bytes);
-                extracted.Add(new ExtractedBank(pack, entry.NameLower, path, awc.Streams?.Length ?? 0, encrypted, StreamNames(awc)));
+                extracted.Add(ExtractBank(pack, rpf, entry, outDir));
             }
             catch (Exception e)
             {
@@ -76,6 +63,25 @@ public static class Commands
             }
         }
         return new { game = game.Info, extracted, errors };
+    }
+
+    /// <summary>Writes one bank from the game as an unencrypted .awc under outDir/pack/.</summary>
+    internal static ExtractedBank ExtractBank(string pack, RpfFile rpf, RpfFileEntry entry, string outDir)
+    {
+        Output.Progress($"Extracting {pack}/{entry.NameLower}");
+        var data = rpf.ExtractFile(entry) ?? throw new BridgeException("error", "Could not read the file from the archive.");
+        var awc = new AwcFile();
+        awc.Load(data, entry);
+        if (!string.IsNullOrEmpty(awc.ErrorMessage)) throw new BridgeException("error", awc.ErrorMessage);
+        if (awc.MultiChannelFlag) throw new BridgeException("error", "Multi-channel stream banks are not supported.");
+
+        var encrypted = awc.WholeFileEncrypted || awc.SingleChannelEncryptFlag;
+        var bytes = encrypted ? SaveDecrypted(awc) : data;
+        var dir = Path.Combine(outDir, pack);
+        Directory.CreateDirectory(dir);
+        var path = Path.Combine(dir, entry.NameLower);
+        File.WriteAllBytes(path, bytes);
+        return new ExtractedBank(pack, entry.NameLower, path, awc.Streams?.Length ?? 0, encrypted, StreamNames(awc));
     }
 
     /// <summary>Re-saves a bank without CodeWalker's AWC encryption (data was decrypted on load).</summary>
@@ -88,7 +94,7 @@ public static class Commands
         return awc.Save();
     }
 
-    static Dictionary<string, string> StreamNames(AwcFile awc)
+    internal static Dictionary<string, string> StreamNames(AwcFile awc)
     {
         var names = new Dictionary<string, string>();
         foreach (var s in awc.Streams ?? [])
@@ -102,11 +108,11 @@ public static class Commands
     static bool namesLoaded;
 
     /// <summary>Feeds CodeWalker's known-strings list into its hash index so streams get readable names.</summary>
-    static void EnsureNames()
+    internal static void EnsureNames()
     {
         if (namesLoaded) return;
         namesLoaded = true;
-        var path = Path.Combine(CodeWalkerLoader.Folder, "strings.txt");
+        var path = Path.Combine(AppContext.BaseDirectory, "strings.txt");
         if (!File.Exists(path)) return;
         foreach (var line in File.ReadLines(path))
         {
@@ -117,9 +123,9 @@ public static class Commands
 
     sealed record Game(GameInfo Info, string Root, List<RpfFile> Archives);
 
-    static Game OpenGame(Options o)
+    /// <summary>Validates the GTA V folder and loads the decryption keys from its exe.</summary>
+    internal static GameInfo OpenGameInfo(Options o, string root)
     {
-        var root = Path.GetFullPath(o.Require("gta"));
         if (!Directory.Exists(root)) throw new BridgeException("no-gta", $"The GTA V folder \"{root}\" does not exist.");
         var legacy = FindPath(root, "gta5.exe") != null;
         var enhanced = FindPath(root, "gta5_enhanced.exe") != null;
@@ -136,19 +142,24 @@ public static class Commands
             keys = true;
         }
         if (o.Get("test-awc-key") is { } testKey) UseTestAwcKey(testKey);
+        return new GameInfo(root, legacy ? "gta5.exe" : "gta5_enhanced.exe", gen9, typeof(GTA5Keys).Assembly.GetName().Version?.ToString(), keys);
+    }
 
+    static Game OpenGame(Options o)
+    {
+        var root = Path.GetFullPath(o.Require("gta"));
+        var info = OpenGameInfo(o, root);
         var archives = new List<RpfFile>();
         if (FindPath(root, "update", "update.rpf") is { } update) archives.Add(Scan(update, @"update\update.rpf"));
         foreach (var (_, archive) in Archives)
         {
             if (FindPath(root, "x64", "audio", "sfx", archive) is { } path) archives.Add(Scan(path, SfxDir + archive));
         }
-        var info = new GameInfo(root, legacy ? "gta5.exe" : "gta5_enhanced.exe", gen9, CodeWalkerLoader.CoreVersion?.ToString(), keys);
         return new Game(info, root, archives);
     }
 
     /// <summary>Case-insensitive path lookup (game files are mixed case; Linux/Proton file systems are not forgiving).</summary>
-    static string? FindPath(string root, params string[] parts)
+    internal static string? FindPath(string root, params string[] parts)
     {
         var current = root;
         foreach (var part in parts)
@@ -162,17 +173,12 @@ public static class Commands
         return File.Exists(current) ? current : null;
     }
 
-    static RpfFile Scan(string path, string relPath)
+    internal static RpfFile Scan(string path, string relPath)
     {
         Output.Progress($"Reading {relPath}");
         var rpf = new RpfFile(path, relPath);
         string? error = null;
         rpf.ScanStructure(_ => { }, e => error ??= e);
-        if (Environment.GetEnvironmentVariable("GSM_BRIDGE_DEBUG") == "1")
-        {
-            Output.Progress($"debug {relPath}: path={rpf.Path} entries={rpf.AllEntries?.Count} error={FirstLine(error)}");
-            foreach (var e in rpf.AllEntries ?? []) Output.Progress($"debug   {e.GetType().Name} {e.Path} name={e.NameLower}");
-        }
         if (rpf.AllEntries == null)
         {
             throw new BridgeException("rpf", $"Could not read {relPath}: {FirstLine(error) ?? "unknown error"}. Check that the decryption keys match this game version.");
@@ -183,7 +189,7 @@ public static class Commands
     static string? FirstLine(string? s) => s?.Split('\n')[0].Trim();
 
     /// <summary>All archives, including ones nested in update.rpf, as a flat list.</summary>
-    static IEnumerable<RpfFile> Flatten(RpfFile rpf)
+    internal static IEnumerable<RpfFile> Flatten(RpfFile rpf)
     {
         yield return rpf;
         foreach (var child in rpf.Children ?? [])
@@ -214,7 +220,7 @@ public static class Commands
     }
 
     /// <summary>Calls GTA5Keys.LoadFromPath with whichever signature this CodeWalker version has.</summary>
-    static void LoadKeys(string gtaRoot, bool gen9)
+    internal static void LoadKeys(string gtaRoot, bool gen9)
     {
         var method = typeof(GTA5Keys).GetMethods(BindingFlags.Public | BindingFlags.Static)
             .Where(m => m.Name == "LoadFromPath")

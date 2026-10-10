@@ -32,6 +32,28 @@ public static class TestGame
                 made.Add($"{pack}/{Path.GetFileName(file).ToLowerInvariant()}");
             }
         }
+        // audio metadata (.rel) from CodeWalker rel XML, as in x64\audio\audio_rel.rpf
+        var rels = o.All("rel");
+        if (rels.Count > 0)
+        {
+            var rpf = CreateArchive(Path.Combine(root, "x64", "audio", "audio_rel.rpf"), @"x64\audio\audio_rel.rpf");
+            foreach (var file in rels)
+            {
+                var rel = XmlRel.GetRel(File.ReadAllText(file));
+                var name = Path.GetFileName(file);
+                if (name.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)) name = name[..^4];
+                RpfFile.CreateFile(rpf.Root, name, rel.Save());
+                made.Add($"audio_rel/{name}");
+            }
+        }
+        // weapon definitions, as in common.rpf\data\ai\weapons.meta
+        if (o.Get("weapons-meta") is { } meta)
+        {
+            var rpf = CreateArchive(Path.Combine(root, "common.rpf"), "common.rpf");
+            var dir = RpfFile.CreateDirectory(RpfFile.CreateDirectory(rpf.Root, "data"), "ai");
+            RpfFile.CreateFile(dir, "weapons.meta", File.ReadAllBytes(meta));
+            made.Add("common/weapons.meta");
+        }
         return new { root, banks = made };
     }
 

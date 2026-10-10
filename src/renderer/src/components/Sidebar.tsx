@@ -17,8 +17,8 @@ export function Sidebar({ items, activeKey, onSelect, onExtractFromGame, onImpor
   return (
     <aside className="sidebar">
       <div className="sidebar-actions">
-        <button className="btn primary" onClick={onExtractFromGame} title="Read the original banks from your GTA V install with CodeWalker">
-          Extract from GTA V…
+        <button className="btn" onClick={onExtractFromGame} title="Read every gun's sounds from your GTA V install again">
+          Scan game again…
         </button>
         <div className="row gap import-row">
           <button className="btn subtle small" onClick={onImportAwc} title="Import .awc files you exported yourself">

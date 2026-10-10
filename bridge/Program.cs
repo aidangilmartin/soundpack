@@ -29,12 +29,12 @@ public static class Program
                 Console.Error.WriteLine(Usage);
                 return 0;
             }
-            CodeWalkerLoader.Install(opts.Require("codewalker"));
             object result = opts.Command switch
             {
                 "probe" => Commands.Probe(opts),
                 "list" => Commands.List(opts),
                 "extract" => Commands.Extract(opts),
+                "scan" => GameScan.Run(opts),
                 "make-test-game" => TestGame.Make(opts),
                 _ => throw new BridgeException("usage", $"Unknown command '{opts.Command}'.\n{Usage}")
             };
@@ -47,21 +47,16 @@ public static class Program
             if (ex is BridgeException b) return Output.Fail(b.Code, b.Message);
             if (ex is MissingMethodException or MissingFieldException or TypeLoadException)
             {
-                return Output.Fail("codewalker-incompatible",
-                    $"This CodeWalker version isn't compatible ({ex.Message}). Download the latest CodeWalker release and select its folder.");
-            }
-            if (ex is FileNotFoundException { FileName: not null } f && (f.FileName.Contains("SharpDX") || f.FileName.Contains("CodeWalker")))
-            {
-                return Output.Fail("codewalker-incompatible",
-                    $"{f.FileName} is missing from the CodeWalker folder. Select the folder of a complete CodeWalker release.");
+                return Output.Fail("codewalker-incompatible", $"Internal CodeWalker error: {ex.Message}");
             }
             return Output.Fail("error", ex.Message);
         }
     }
 
     const string Usage = """
-        Usage: gunpack-bridge <command> --codewalker <CodeWalker folder> [options]
+        Usage: gunpack-bridge <command> [options]
           probe   --gta <GTA V folder>                      check the game folder and decryption keys
+          scan    --gta <GTA V folder> --out <dir>          index every gun's sounds and extract their banks
           list    --gta <GTA V folder>                      list weapon sound banks
           extract --gta <GTA V folder> --out <dir> [--bank <pack>/<file>]...
                                                             extract banks as unencrypted .awc files
@@ -77,7 +72,9 @@ public static class Output
 {
     static readonly JsonSerializerOptions Json = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
 
-    public static void Write(object value) => Console.Out.WriteLine(JsonSerializer.Serialize(value, Json));
+    public static string Serialize(object value) => JsonSerializer.Serialize(value, Json);
+
+    public static void Write(object value) => Console.Out.WriteLine(Serialize(value));
 
     public static int Fail(string code, string message)
     {

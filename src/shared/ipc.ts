@@ -1,5 +1,7 @@
 /** Contract between the Electron main process and the renderer (exposed as window.api). */
 
+import type { WeaponIndex } from '../core/weapons'
+
 export interface LibraryTemplate {
   pack: string
   file: string
@@ -22,13 +24,25 @@ export interface ImportReport {
 }
 
 export interface GameSettings {
+  /** Saved folder, or the auto-detected one before the first scan. */
   gtaPath: string | null
   gtaValid: boolean
-  codewalkerPath: string | null
-  codewalkerValid: boolean
-  /** True when using the CodeWalker.Core built by `npm run build:bridge` (development only). */
-  codewalkerIsDevBuild: boolean
+  /** True once a folder was confirmed by a successful scan. */
+  confirmed: boolean
   bridgeAvailable: boolean
+}
+
+export interface ScanReport {
+  weapons: number
+  banks: ImportReport
+  warnings: string[]
+}
+
+export interface StoredWeaponIndex {
+  index: WeaponIndex
+  scannedAt: string
+  /** The game exe changed since the scan (e.g. a game update): suggest scanning again. */
+  stale: boolean
 }
 
 export interface GameInfo {
@@ -37,13 +51,6 @@ export interface GameInfo {
   gen9: boolean
   codeWalkerVersion: string | null
   keysLoaded: boolean
-}
-
-export interface GameBank {
-  pack: string
-  file: string
-  size: number
-  archive: string
 }
 
 export interface PickedFile {
@@ -92,11 +99,11 @@ export interface Api {
   openProject(): Promise<OpenedProject | null>
 
   getGameSettings(): Promise<GameSettings>
-  /** Opens a folder dialog (or uses `path`) and stores the GTA V / CodeWalker folder. */
-  setGamePath(kind: 'gta' | 'codewalker', path?: string): Promise<GameSettings>
-  listGameBanks(): Promise<{ game: GameInfo; banks: GameBank[] }>
-  /** Extracts banks ("pack/file") from the game into the template library. */
-  extractGameBanks(banks: string[]): Promise<ImportReport>
+  /** Opens a folder dialog (or uses `path`) and remembers the GTA V folder. */
+  setGtaPath(path?: string): Promise<GameSettings>
+  /** Reads every gun's sounds from the game, extracts their banks into the library and stores the weapon index. */
+  scanGame(): Promise<ScanReport>
+  getWeaponIndex(): Promise<StoredWeaponIndex | null>
   onGameProgress(listener: (message: string) => void): () => void
 
   exportResource(resourceName: string, files: ExportFile[], mode: ExportMode): Promise<string | null>
@@ -118,9 +125,9 @@ export const IPC = {
   saveProject: 'project:save',
   openProject: 'project:open',
   getGameSettings: 'game:settings',
-  setGamePath: 'game:set-path',
-  listGameBanks: 'game:list',
-  extractGameBanks: 'game:extract',
+  setGtaPath: 'game:set-gta',
+  scanGame: 'game:scan',
+  getWeaponIndex: 'game:weapon-index',
   gameProgress: 'game:progress',
   exportResource: 'export:resource',
   showInFolder: 'shell:show',

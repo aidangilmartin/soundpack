@@ -56,10 +56,10 @@ export function BankView(props: Props) {
         <p className="muted mono">
           {item.pack}/{item.file}
         </p>
-        <p>This sound bank isn't in your library yet. The app never ships game files — it reads them from your own GTA V install.</p>
+        <p>This sound bank isn't in your library. Scanning the game adds every bank the guns use; other banks can be imported by hand.</p>
         <div className="row gap">
           <button className="btn primary" onClick={props.onExtractFromGame}>
-            Extract from GTA V…
+            Scan game…
           </button>
         </div>
         <p className="muted small">

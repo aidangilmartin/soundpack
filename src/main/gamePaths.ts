@@ -15,10 +15,6 @@ export function isGtaFolder(dir: string): boolean {
   return hasFile(dir, 'gta5.exe') || hasFile(dir, 'gta5_enhanced.exe')
 }
 
-export function isCodeWalkerFolder(dir: string): boolean {
-  return hasFile(dir, 'CodeWalker.Core.dll')
-}
-
 /** FiveM stores the GTA V folder it uses as IVPath in CitizenFX.ini. */
 export function parseCitizenFxIni(text: string): string | undefined {
   const m = /^\s*IVPath\s*=\s*(.+?)\s*$/im.exec(text)

@@ -16,9 +16,9 @@ const api: Api = {
   saveProject: (json, sources, path) => ipcRenderer.invoke(IPC.saveProject, json, sources, path),
   openProject: () => ipcRenderer.invoke(IPC.openProject),
   getGameSettings: () => ipcRenderer.invoke(IPC.getGameSettings),
-  setGamePath: (kind, path) => ipcRenderer.invoke(IPC.setGamePath, kind, path),
-  listGameBanks: () => ipcRenderer.invoke(IPC.listGameBanks),
-  extractGameBanks: (banks) => ipcRenderer.invoke(IPC.extractGameBanks, banks),
+  setGtaPath: (path) => ipcRenderer.invoke(IPC.setGtaPath, path),
+  scanGame: () => ipcRenderer.invoke(IPC.scanGame),
+  getWeaponIndex: () => ipcRenderer.invoke(IPC.getWeaponIndex),
   onGameProgress: (listener) => {
     const handler = (_e: Electron.IpcRendererEvent, message: string): void => listener(message)
     ipcRenderer.on(IPC.gameProgress, handler)

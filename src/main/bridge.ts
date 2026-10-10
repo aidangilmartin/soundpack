@@ -1,19 +1,13 @@
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
-import type { GameBank, GameInfo } from '../shared/ipc'
+import type { GameInfo } from '../shared/ipc'
 
 export const BRIDGE_NAME = process.platform === 'win32' ? 'gunpack-bridge.exe' : 'gunpack-bridge'
 
 /** Where the bridge executable lives: bundled resources when packaged, resources/bridge in development. */
 export function bridgePath(opts: { isPackaged: boolean; resourcesPath: string; appPath: string }): string {
   return opts.isPackaged ? join(opts.resourcesPath, 'bridge', BRIDGE_NAME) : join(opts.appPath, 'resources', 'bridge', BRIDGE_NAME)
-}
-
-/** The CodeWalker.Core build made by `npm run build:bridge`, usable as a CodeWalker folder during development. */
-export function devCodeWalkerPath(appPath: string): string | undefined {
-  const p = join(appPath, 'bridge', '.codewalker', 'runtime')
-  return existsSync(join(p, 'CodeWalker.Core.dll')) ? p : undefined
 }
 
 export class BridgeError extends Error {
@@ -28,12 +22,30 @@ export class BridgeError extends Error {
 
 export interface ListResult {
   game: GameInfo
-  banks: GameBank[]
+  banks: { pack: string; file: string; size: number; archive: string }[]
+}
+
+export interface ExtractedBank {
+  pack: string
+  file: string
+  path: string
+  streams: number
+  wasEncrypted: boolean
+  names: Record<string, string>
+}
+
+export interface ScanResult {
+  game: GameInfo
+  indexPath: string
+  extracted: ExtractedBank[]
+  errors: { pack: string; file: string; error: string }[]
+  weapons: number
+  warnings: string[]
 }
 
 export interface ExtractResult {
   game: GameInfo
-  extracted: { pack: string; file: string; path: string; streams: number; wasEncrypted: boolean; names: Record<string, string> }[]
+  extracted: ExtractedBank[]
   errors: { pack: string; file: string; error: string }[]
 }
 

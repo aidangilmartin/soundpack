@@ -1,0 +1,54 @@
+import { writeFileSync } from 'node:fs'
+import { join, resolve } from 'node:path'
+import { makeBank } from '../src/core/awc/fixtures'
+import { writeAwc } from '../src/core/awc/write'
+import { bridgePath, runBridge } from '../src/main/bridge'
+
+/** Helpers for tests that run the real CodeWalker bridge against a fake GTA V folder. */
+
+export const repoRoot = resolve(__dirname, '..')
+export const bridgeExe = bridgePath({ isPackaged: false, resourcesPath: '', appPath: repoRoot })
+export const testAwcKey = Buffer.from(Array.from({ length: 16 }, (_, i) => i + 1)).toString('base64')
+const fixtures = join(repoRoot, 'tests', 'fixtures', 'game')
+
+/** The synthetic test bank without its deliberately malformed gesture chunk (CodeWalker parses those strictly). */
+export function fixtureBank(): Uint8Array {
+  const b = makeBank()
+  return writeAwc({ ...b, streams: b.streams.filter((s) => s.chunks.some((c) => c.kind === 'format')) })
+}
+
+/**
+ * Builds a fake GTA V folder: OPEN (unencrypted) archives holding AWC-encrypted banks, audio
+ * metadata (tests/fixtures/game/*.rel.xml) and weapons.meta. Returns the game folder.
+ */
+export async function makeFakeGame(dir: string, opts: { key?: string; wholeFile?: boolean; metadata?: boolean } = {}): Promise<string> {
+  const bank = join(dir, 'ptl_pistol.awc')
+  const shared = join(dir, 'weapons.awc')
+  writeFileSync(bank, fixtureBank())
+  writeFileSync(shared, fixtureBank())
+  const game = join(dir, 'Grand Theft Auto V')
+  const metadata =
+    opts.metadata === false
+      ? []
+      : [
+          '--rel',
+          join(fixtures, 'sounds.dat54.rel.xml'),
+          '--rel',
+          join(fixtures, 'game.dat151.rel.xml'),
+          '--weapons-meta',
+          join(fixtures, 'weapons.meta')
+        ]
+  await runBridge(bridgeExe, [
+    'make-test-game',
+    '--out',
+    game,
+    ...(opts.key ? ['--test-awc-key', opts.key] : []),
+    ...(opts.wholeFile ? ['--whole-file'] : []),
+    '--weapons-player-awc',
+    bank,
+    '--resident-awc',
+    shared,
+    ...metadata
+  ])
+  return game
+}

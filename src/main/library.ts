@@ -188,7 +188,7 @@ export class TemplateLibrary {
   }
 }
 
-/** Small JSON settings file (GTA V and CodeWalker folders). */
+/** Small JSON settings file (the GTA V folder). */
 export class SettingsStore<T extends object> {
   constructor(readonly path: string) {}
 

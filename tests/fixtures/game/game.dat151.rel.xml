@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Synthetic weapon audio settings in CodeWalker's rel XML format (not game data). -->
+<Dat151>
+ <Version value="9037528" />
+ <Items>
+  <Item type="ItemAudioSettings" ntOffset="0">
+   <Name>audio_item_pistol</Name>
+   <FallBackWeapon>pistol_npc</FallBackWeapon>
+   <Weapons>
+    <Item>
+     <Category>player</Category>
+     <Weapon>pistol_player</Weapon>
+    </Item>
+   </Weapons>
+  </Item>
+  <Item type="WeaponSettings" ntOffset="0">
+   <Name>pistol_player</Name>
+   <Flags value="0" />
+   <Version value="0" />
+   <FireSound>pistol_player_fire</FireSound>
+   <ReportSound>pistol_report</ReportSound>
+   <ReportVolumeDelta value="-3" />
+   <ReportPredelayDelta value="20" />
+   <TailEnergyValue value="1" />
+  </Item>
+  <Item type="WeaponSettings" ntOffset="0">
+   <Name>pistol_npc</Name>
+   <Flags value="0" />
+   <Version value="0" />
+   <FireSound>pistol_npc_fire</FireSound>
+  </Item>
+  <Item type="ItemAudioSettings" ntOffset="0">
+   <Name>audio_item_smg</Name>
+   <FallBackWeapon>smg_player</FallBackWeapon>
+  </Item>
+  <Item type="WeaponSettings" ntOffset="0">
+   <Name>smg_player</Name>
+   <Flags value="0" />
+   <Version value="0" />
+   <FireSound>smg_player_fire</FireSound>
+  </Item>
+ </Items>
+</Dat151>

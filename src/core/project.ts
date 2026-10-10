@@ -168,3 +168,47 @@ export function parseProject(json: string): Project {
     }))
   }
 }
+
+/** A stream in a specific bank, as used by the weapon view (one weapon spans several banks). */
+export interface StreamRef {
+  pack: string
+  file: string
+  streamId: number
+}
+
+function byBank(targets: StreamRef[]): { pack: string; file: string; ids: number[] }[] {
+  const groups = new Map<string, { pack: string; file: string; ids: number[] }>()
+  for (const t of targets) {
+    const key = bankKey(t.pack, t.file)
+    const g = groups.get(key) ?? { pack: t.pack, file: t.file, ids: [] }
+    if (!g.ids.includes(t.streamId)) g.ids.push(t.streamId)
+    groups.set(key, g)
+  }
+  return [...groups.values()]
+}
+
+export function assignAcross(
+  project: Project,
+  targets: StreamRef[],
+  source: SourceInfo,
+  shape: ShapeSettings,
+  pairsFor: (pack: string, file: string) => StreamPair[] = () => []
+): Project {
+  return byBank(targets).reduce((p, g) => assignSource(p, g.pack, g.file, g.ids, source, shape, pairsFor(g.pack, g.file)), project)
+}
+
+export function silenceAcross(project: Project, targets: StreamRef[]): Project {
+  return byBank(targets).reduce((p, g) => silenceStreams(p, g.pack, g.file, g.ids), project)
+}
+
+export function clearAcross(project: Project, targets: StreamRef[]): Project {
+  return byBank(targets).reduce((p, g) => clearStreams(p, g.pack, g.file, g.ids), project)
+}
+
+export function updateShapeAcross(project: Project, targets: StreamRef[], patch: Partial<ShapeSettings>): Project {
+  return byBank(targets).reduce((p, g) => updateShape(p, g.pack, g.file, g.ids, patch), project)
+}
+
+export function findAssignment(project: Project, ref: StreamRef): Assignment | undefined {
+  return findBank(project, ref.pack, ref.file)?.assignments.find((a) => a.streamId === ref.streamId)
+}

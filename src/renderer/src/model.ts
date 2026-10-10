@@ -4,7 +4,7 @@ import { parseAwc } from '@core/awc/read'
 import { BankCategory, CATALOG, lookupBank } from '@core/catalog'
 import { hex8 } from '@core/hash'
 import { detectPairs, StreamPair } from '@core/pairs'
-import { Assignment, bankKey, Project, ProjectBank, SourceInfo } from '@core/project'
+import { Assignment, bankKey, Project, ProjectBank, SourceInfo, type StreamRef } from '@core/project'
 import type { AudioData } from '@core/wav'
 import type { LibraryTemplate, TemplateData } from '@shared/ipc'
 
@@ -113,3 +113,5 @@ export function cleanError(e: unknown): string {
   const msg = e instanceof Error ? e.message : String(e)
   return msg.replace(/^Error invoking remote method '[^']+': /, '').replace(/^(\w*Error): /, '')
 }
+
+export const refKey = (r: StreamRef): string => `${bankKey(r.pack, r.file)}:${r.streamId}`

@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { detectGtaFolder, gtaCandidates, isCodeWalkerFolder, isGtaFolder, parseCitizenFxIni } from './gamePaths'
+import { detectGtaFolder, gtaCandidates, isGtaFolder, parseCitizenFxIni } from './gamePaths'
 
 describe('game paths', () => {
   it('reads the GTA V path FiveM uses', () => {
@@ -15,10 +15,6 @@ describe('game paths', () => {
     expect(isGtaFolder(gta)).toBe(false)
     writeFileSync(join(gta, 'GTA5.exe'), '')
     expect(isGtaFolder(gta)).toBe(true)
-    const cw = mkdtempSync(join(tmpdir(), 'gsm-cw-'))
-    writeFileSync(join(cw, 'CodeWalker.Core.dll'), '')
-    expect(isCodeWalkerFolder(cw)).toBe(true)
-    expect(isCodeWalkerFolder(gta)).toBe(false)
   })
 
   it('prefers the FiveM path, then common install folders', () => {

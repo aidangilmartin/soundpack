@@ -7,10 +7,12 @@ files:
   - out/**/*
   - package.json
 asar: true
-# The CodeWalker bridge (built by `npm run build:bridge`). It does not contain CodeWalker itself.
+# The game-file bridge (built by `npm run build:bridge`), which bundles CodeWalker; see THIRD_PARTY_NOTICES.md.
 extraResources:
   - from: resources/bridge
     to: bridge
+  - from: THIRD_PARTY_NOTICES.md
+    to: THIRD_PARTY_NOTICES.md
 win:
   target:
     - nsis
