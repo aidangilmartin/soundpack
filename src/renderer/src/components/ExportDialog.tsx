@@ -1,116 +1,97 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { BuildResult } from '@core/build'
-import { sanitizeResourceName } from '@core/manifest'
+import { PACK_ARCHIVES, sanitizePackName } from '@core/pack'
 import type { Project } from '@core/project'
-import type { ExportMode } from '@shared/ipc'
-import { fmtBytes } from '../model'
+import type { ExportArchivesResult } from '@shared/ipc'
+import { cleanError, fmtBytes } from '../model'
 
 interface Props {
   project: Project
   onChange: (patch: Partial<Project>) => void
   onBuild: () => Promise<BuildResult>
-  onSave: (result: BuildResult, mode: ExportMode) => Promise<string | null>
+  onExport: (result: BuildResult, packName: string) => Promise<ExportArchivesResult | null>
   onClose: () => void
 }
 
-export function ExportDialog({ project, onChange, onBuild, onSave, onClose }: Props) {
-  const [mode, setMode] = useState<ExportMode>('folder')
-  const [busy, setBusy] = useState(false)
+const ARCHIVE_ROLE: Record<string, string> = {
+  'WEAPONS_PLAYER.rpf': 'your own gun',
+  'RESIDENT.rpf': 'other players and NPCs'
+}
+
+export function ExportDialog({ project, onChange, onBuild, onExport, onClose }: Props) {
+  const [busy, setBusy] = useState<'build' | 'export' | null>('build')
+  const [progress, setProgress] = useState('')
   const [result, setResult] = useState<BuildResult | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [saved, setSaved] = useState<string | null>(null)
+  const [exported, setExported] = useState<ExportArchivesResult | null>(null)
 
-  const build = async (): Promise<void> => {
-    setBusy(true)
-    setError(null)
-    setSaved(null)
-    try {
-      // let the "Building…" state paint before the synchronous work starts
-      await new Promise((r) => setTimeout(r, 30))
-      setResult(await onBuild())
-    } catch (e) {
-      setResult(null)
-      setError((e as Error).message)
-    } finally {
-      setBusy(false)
+  useEffect(() => window.api.onGameProgress(setProgress), [])
+
+  useEffect(() => {
+    let live = true
+    // let the dialog paint before the (synchronous) audio processing starts
+    const t = setTimeout(() => {
+      onBuild()
+        .then((r) => live && setResult(r))
+        .catch((e) => live && setError(cleanError(e)))
+        .finally(() => live && setBusy(null))
+    }, 30)
+    return () => {
+      live = false
+      clearTimeout(t)
     }
-  }
+  }, [])
 
-  const save = async (): Promise<void> => {
+  const exportNow = async (): Promise<void> => {
     if (!result) return
-    setBusy(true)
+    setBusy('export')
+    setError(null)
+    setProgress('')
     try {
-      const path = await onSave(result, mode)
-      if (path) setSaved(path)
+      const r = await onExport(result, sanitizePackName(project.resourceName))
+      if (r) setExported(r)
     } catch (e) {
-      setError((e as Error).message)
+      setError(cleanError(e))
     } finally {
-      setBusy(false)
+      setBusy(null)
     }
   }
 
-  const edit = (patch: Partial<Project>): void => {
-    setResult(null)
-    setSaved(null)
-    onChange(patch)
-  }
-
-  const total = result?.files.reduce((n, f) => n + f.bytes.byteLength, 0) ?? 0
+  const name = sanitizePackName(project.resourceName)
 
   return (
-    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Export resource">
+    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Export sound pack">
       <div className="modal">
         <header>
-          <h2>Export FiveM resource</h2>
-          <button className="icon-btn" onClick={onClose} aria-label="Close">
+          <h2>Export sound pack</h2>
+          <button className="icon-btn" onClick={onClose} aria-label="Close" disabled={busy === 'export'}>
             ✕
           </button>
         </header>
-        <div className="grid2">
-          <label className="field">
-            <span>Resource name</span>
-            <input value={project.resourceName} onChange={(e) => edit({ resourceName: e.target.value })} />
-            {sanitizeResourceName(project.resourceName) !== project.resourceName && (
-              <small className="muted">Folder will be “{sanitizeResourceName(project.resourceName)}”</small>
-            )}
-          </label>
-          <label className="field">
-            <span>Author</span>
-            <input value={project.author} onChange={(e) => edit({ author: e.target.value })} />
-          </label>
-          <label className="field">
-            <span>Description</span>
-            <input value={project.description} onChange={(e) => edit({ description: e.target.value })} />
-          </label>
-          <label className="field">
-            <span>Version</span>
-            <input value={project.resourceVersion} onChange={(e) => edit({ resourceVersion: e.target.value })} />
-          </label>
-        </div>
-        <fieldset className="row gap">
-          <legend className="small muted">Output</legend>
-          <label>
-            <input type="radio" checked={mode === 'folder'} onChange={() => setMode('folder')} /> Folder (pick your server's resources
-            folder)
-          </label>
-          <label>
-            <input type="radio" checked={mode === 'zip'} onChange={() => setMode('zip')} /> .zip
-          </label>
-        </fieldset>
+        <p className="muted small">
+          Rebuilds the game's sound archives with your sounds: <span className="mono">WEAPONS_PLAYER.rpf</span> and{' '}
+          <span className="mono">RESIDENT.rpf</span>, ready to drag into your mods folder. Your game files are not changed.
+        </p>
+        <label className="field">
+          <span>Pack name</span>
+          <input value={project.resourceName} onChange={(e) => onChange({ resourceName: e.target.value })} disabled={!!busy} />
+          <small className="muted">Saved in a folder called “{name}”.</small>
+        </label>
 
         {error && <p className="error">{error}</p>}
 
-        {result && (
+        {result && !exported && (
           <div className="build-result">
-            <p>
-              <b>{result.resourceName}</b> · {result.files.length} files · {fmtBytes(total)}
-            </p>
             <ul className="small">
-              {result.banks.map((b) => (
-                <li key={`${b.pack}/${b.file}`} className="mono">
-                  audio/sfx/{b.pack}/{b.file} — {b.replaced} replaced{b.silenced ? `, ${b.silenced} silenced` : ''}
-                </li>
-              ))}
+              {result.archives.map((a) => {
+                const banks = result.banks.filter((b) => PACK_ARCHIVES[b.pack] === a)
+                return (
+                  <li key={a}>
+                    <b className="mono">{a}</b> — {ARCHIVE_ROLE[a] ?? ''}:{' '}
+                    {banks.map((b) => `${b.file} (${b.replaced} replaced${b.silenced ? `, ${b.silenced} silenced` : ''})`).join(', ')}
+                  </li>
+                )
+              })}
             </ul>
             {result.warnings.length > 0 && (
               <ul className="warnings small">
@@ -122,31 +103,52 @@ export function ExportDialog({ project, onChange, onBuild, onSave, onClose }: Pr
           </div>
         )}
 
-        {saved && (
-          <p className="ok">
-            Saved to <span className="mono">{saved}</span>.{' '}
-            <button className="btn subtle small" onClick={() => void window.api.showInFolder(saved)}>
-              Show
-            </button>
-            <br />
-            <span className="small muted">
-              Add <span className="mono">ensure {result?.resourceName}</span> to server.cfg and restart. Test with a second player to hear
-              other people's shots.
-            </span>
-          </p>
+        {exported && (
+          <div className="build-result">
+            <p className="ok">
+              Saved to <span className="mono">{exported.folder}</span>{' '}
+              <button
+                className="btn subtle small"
+                onClick={() => void window.api.showInFolder(exported.archives[0]?.path ?? exported.folder)}
+              >
+                Show
+              </button>
+            </p>
+            <ul className="small mono">
+              {exported.archives.map((a) => (
+                <li key={a.file}>
+                  {a.file} · {fmtBytes(a.size)}
+                </li>
+              ))}
+              <li>README.txt</li>
+            </ul>
+            {exported.errors.length > 0 && (
+              <ul className="warnings small">
+                {exported.errors.map((e, i) => (
+                  <li key={i}>{e}</li>
+                ))}
+              </ul>
+            )}
+            <p className="small">
+              <b>FiveM:</b> drag the .rpf files into <span className="mono">%localappdata%\FiveM\FiveM.app\mods</span>.
+              <br />
+              <b>Single player:</b> put them in <span className="mono">GTA V\mods\x64\audio\sfx</span> (OpenIV.asi).
+              <br />
+              <span className="muted">Don't overwrite the originals in the game folder — FiveM needs those untouched.</span>
+            </p>
+          </div>
         )}
 
         <footer className="row gap end">
-          <button className="btn" onClick={onClose}>
-            Close
+          {busy && (
+            <span className="muted small grow">{busy === 'build' ? 'Preparing your sounds…' : progress || 'Rebuilding archives…'}</span>
+          )}
+          <button className="btn" onClick={onClose} disabled={busy === 'export'}>
+            {exported ? 'Done' : 'Close'}
           </button>
-          {!result ? (
-            <button className="btn primary" onClick={build} disabled={busy}>
-              {busy ? 'Building…' : 'Build'}
-            </button>
-          ) : (
-            <button className="btn primary" onClick={save} disabled={busy}>
-              {busy ? 'Saving…' : mode === 'zip' ? 'Save .zip…' : 'Save folder…'}
+          {!exported && (
+            <button className="btn primary" onClick={() => void exportNow()} disabled={!result || !!busy}>
+              {busy === 'export' ? 'Exporting…' : 'Export…'}
             </button>
           )}
         </footer>

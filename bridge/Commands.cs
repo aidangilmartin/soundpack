@@ -188,6 +188,8 @@ public static class Commands
 
     static string? FirstLine(string? s) => s?.Split('\n')[0].Trim();
 
+    internal static string FirstLineOf(string? s) => FirstLine(s) ?? "unknown error";
+
     /// <summary>All archives, including ones nested in update.rpf, as a flat list.</summary>
     internal static IEnumerable<RpfFile> Flatten(RpfFile rpf)
     {

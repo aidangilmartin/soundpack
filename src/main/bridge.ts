@@ -100,3 +100,9 @@ export function runBridge<T>(exe: string, args: string[], onProgress?: (message:
     })
   })
 }
+
+export interface BuildRpfResult {
+  game: GameInfo
+  archives: { pack: string; file: string; path: string; files: number; size: number; replaced: string[] }[]
+  errors: { pack: string; file: string; error: string }[]
+}

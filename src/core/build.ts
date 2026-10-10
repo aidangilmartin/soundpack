@@ -1,10 +1,10 @@
 import { replaceStreamAudio, silenceStream } from './awc/replace'
 import { AwcFile, getFormat } from './awc/types'
 import { writeAwc } from './awc/write'
-import { lookupBank, PACK_RESIDENT, PACK_WEAPONS_PLAYER } from './catalog'
+import { PACK_RESIDENT, PACK_WEAPONS_PLAYER } from './catalog'
 import { shapeAudio } from './dsp'
 import { hex8 } from './hash'
-import { generateManifest, generateReadme, sanitizeResourceName } from './manifest'
+import { PACK_ARCHIVES, sanitizePackName } from './pack'
 import { bankKey, Project } from './project'
 import type { AudioData } from './wav'
 
@@ -18,17 +18,21 @@ export interface BuildInput {
   names?: Map<string, Record<number, string>>
 }
 
-export interface BuiltFile {
-  /** Path inside the resource folder, using '/'. */
-  path: string
+export interface BuiltBank {
+  pack: string
+  file: string
   bytes: Uint8Array
+  replaced: number
+  silenced: number
 }
 
 export interface BuildResult {
-  resourceName: string
-  files: BuiltFile[]
+  packName: string
+  /** Modified sound banks, ready to be packed into their archives. */
+  banks: BuiltBank[]
+  /** Archives that will be rebuilt, e.g. WEAPONS_PLAYER.rpf. */
+  archives: string[]
   warnings: string[]
-  banks: { pack: string; file: string; replaced: number; silenced: number }[]
 }
 
 export class BuildError extends Error {
@@ -40,19 +44,23 @@ export class BuildError extends Error {
 
 const LONG_SOUND_MS = 3000
 
-export function buildResource(input: BuildInput): BuildResult {
+/** Applies the project's assignments to the template banks. Only banks with changes are returned. */
+export function buildBanks(input: BuildInput): BuildResult {
   const { project, templates, sources } = input
   const warnings: string[] = []
-  const files: BuiltFile[] = []
-  const banks: BuildResult['banks'] = []
+  const banks: BuiltBank[] = []
 
-  const active = project.banks.filter((b) => b.assignments.length > 0)
-  if (active.length === 0) throw new BuildError('Nothing to export yet: assign a sound to at least one stream.')
+  const changed = project.banks.filter((b) => b.assignments.length > 0)
+  const active = changed.filter((b) => PACK_ARCHIVES[b.pack])
+  for (const b of changed.filter((x) => !PACK_ARCHIVES[x.pack])) {
+    warnings.push(`${b.pack}/${b.file} is skipped: only WEAPONS_PLAYER.rpf and RESIDENT.rpf can be rebuilt.`)
+  }
+  if (active.length === 0) throw new BuildError('Nothing to export yet: replace at least one sound.')
 
   for (const bank of active) {
     const key = bankKey(bank.pack, bank.file)
     const template = templates.get(key)
-    if (!template) throw new BuildError(`The template for ${bank.pack}/${bank.file} is missing. Import it again.`)
+    if (!template) throw new BuildError(`${bank.pack}/${bank.file} isn't in your library. Scan the game again.`)
     const names = input.names?.get(key) ?? {}
     const label = (id: number): string => `${bank.file} ${names[id] ?? hex8(id)}`
 
@@ -62,7 +70,7 @@ export function buildResource(input: BuildInput): BuildResult {
     for (const a of bank.assignments) {
       const stream = byId.get(a.streamId)
       if (!stream) {
-        warnings.push(`${label(a.streamId)} is not in the template and was skipped.`)
+        warnings.push(`${label(a.streamId)} is not in the game's bank and was skipped.`)
         continue
       }
       if (a.action === 'silence') {
@@ -89,25 +97,15 @@ export function buildResource(input: BuildInput): BuildResult {
     }
 
     const out: AwcFile = { ...template, streams: template.streams.map((s) => byId.get(s.id)!) }
-    files.push({ path: `audio/sfx/${bank.pack}/${bank.file}`, bytes: writeAwc(out) })
-    banks.push({ pack: bank.pack, file: bank.file, replaced, silenced })
+    banks.push({ pack: bank.pack, file: bank.file, bytes: writeAwc(out), replaced, silenced })
   }
 
   const touchesPlayer = active.some((b) => b.pack === PACK_WEAPONS_PLAYER)
   const touchesShared = active.some((b) => bankKey(b.pack, b.file) === bankKey(PACK_RESIDENT, 'weapons.awc'))
   if (touchesPlayer && !touchesShared) {
-    warnings.push('resident/weapons.awc is not replaced, so other players may still hear vanilla gunshots from you.')
-  }
-  for (const b of active) {
-    if (!lookupBank(b.file, b.pack)) warnings.push(`${b.pack}/${b.file} is not a known gun bank; test it in-game.`)
+    warnings.push('RESIDENT.rpf (weapons.awc) is unchanged, so other players and NPCs still sound vanilla.')
   }
 
-  const info = { ...project, resourceName: sanitizeResourceName(project.resourceName) }
-  const paths = files.map((f) => f.path)
-  const enc = new TextEncoder()
-  files.unshift(
-    { path: 'fxmanifest.lua', bytes: enc.encode(generateManifest(info, paths)) },
-    { path: 'README.txt', bytes: enc.encode(generateReadme(info, paths)) }
-  )
-  return { resourceName: info.resourceName, files, warnings, banks }
+  const archives = [...new Set(banks.map((b) => PACK_ARCHIVES[b.pack]))]
+  return { packName: sanitizePackName(project.resourceName), banks, archives, warnings }
 }

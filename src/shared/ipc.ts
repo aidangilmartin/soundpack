@@ -70,12 +70,19 @@ export interface OpenedProject {
   sources: ProjectFileSource[]
 }
 
-export interface ExportFile {
-  path: string
+/** A modified sound bank to pack into its archive. */
+export interface BankFile {
+  pack: string
+  file: string
   bytes: Uint8Array
 }
 
-export type ExportMode = 'folder' | 'zip'
+export interface ExportArchivesResult {
+  /** Folder holding the rebuilt .rpf files and README.txt. */
+  folder: string
+  archives: { file: string; path: string; size: number; replaced: string[] }[]
+  errors: string[]
+}
 
 export interface Api {
   listTemplates(): Promise<LibraryTemplate[]>
@@ -106,7 +113,8 @@ export interface Api {
   getWeaponIndex(): Promise<StoredWeaponIndex | null>
   onGameProgress(listener: (message: string) => void): () => void
 
-  exportResource(resourceName: string, files: ExportFile[], mode: ExportMode): Promise<string | null>
+  /** Rebuilds WEAPONS_PLAYER.rpf / RESIDENT.rpf with the banks into a folder the user picks. */
+  exportArchives(name: string, banks: BankFile[]): Promise<ExportArchivesResult | null>
   showInFolder(path: string): Promise<void>
   openExternal(url: string): Promise<void>
 }
@@ -129,7 +137,7 @@ export const IPC = {
   scanGame: 'game:scan',
   getWeaponIndex: 'game:weapon-index',
   gameProgress: 'game:progress',
-  exportResource: 'export:resource',
+  exportArchives: 'export:archives',
   showInFolder: 'shell:show',
   openExternal: 'shell:external'
 } as const

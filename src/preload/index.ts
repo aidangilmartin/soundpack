@@ -24,7 +24,7 @@ const api: Api = {
     ipcRenderer.on(IPC.gameProgress, handler)
     return () => ipcRenderer.removeListener(IPC.gameProgress, handler)
   },
-  exportResource: (name, files, mode) => ipcRenderer.invoke(IPC.exportResource, name, files, mode),
+  exportArchives: (name, banks) => ipcRenderer.invoke(IPC.exportArchives, name, banks),
   showInFolder: (path) => ipcRenderer.invoke(IPC.showInFolder, path),
   openExternal: (url) => ipcRenderer.invoke(IPC.openExternal, url)
 }

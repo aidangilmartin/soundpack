@@ -1,6 +1,6 @@
 # Gun Soundpack Maker
 
-A desktop app for building **server-side FiveM gun sound packs**. Load GTA V's original weapon sound banks, swap in your own gunshots, and export a resource you can drop into your server. You don't need CodeWalker round-trips, and you don't hand-edit sample counts in XML.
+A desktop app for making **GTA V / FiveM gun sound packs**. It reads every gun's sounds from your game, lets you swap in your own gunshots with an in-game-style preview, and rebuilds `WEAPONS_PLAYER.rpf` and `RESIDENT.rpf`. You drag the two files into your mods folder, with no OpenIV or CodeWalker round-trips.
 
 ## What it does
 
@@ -23,17 +23,16 @@ A desktop app for building **server-side FiveM gun sound packs**. Load GTA V's o
   - fades, gain and peak normalisation
   - resampling (keeps the original rate by default)
   - headroom override
-- **Exports a FiveM resource** as a folder or a `.zip`:
+- **Exports rebuilt game archives**, ready to drag and drop:
 
   ```
   my_gunpack/
-    fxmanifest.lua
-    README.txt
-    audio/sfx/weapons_player/ptl_pistol.awc
-    audio/sfx/resident/weapons.awc
+    WEAPONS_PLAYER.rpf   your own gun's sounds
+    RESIDENT.rpf         shared sounds: other players and NPCs
+    README.txt           where to put them
   ```
 
-  The manifest lists every bank and registers each folder with `data_file 'AUDIO_WAVEPACK' 'audio/sfx/<pack>'`. Only banks you changed are included, and untouched sounds inside them are copied byte for byte.
+  The app rebuilds each archive from your own game: every file is copied over, with your changed sound banks swapped in. Only archives with changes are written. They're OPEN (unencrypted) archives, the standard format for mod folders.
 - **Saves projects** as `.gunpack` files. They hold your settings and your own source audio, never game files.
 - **Sound banks tab (advanced).** Every bank in your library, stream by stream, with manual `.awc` and CodeWalker XML import.
 
@@ -41,10 +40,10 @@ A desktop app for building **server-side FiveM gun sound packs**. Load GTA V's o
 
 | Bank | Used for |
 | --- | --- |
-| `audio/sfx/weapons_player/*.awc` (e.g. `ptl_pistol.awc`, `smg_smg.awc`, `sht_pump.awc`) | Your own gun, as you hear it |
-| `audio/sfx/resident/weapons.awc` | Shared weapon sounds: NPCs and other players' gunfire |
+| `WEAPONS_PLAYER.rpf` → `*.awc` (e.g. `ptl_pistol.awc`, `smg_smg.awc`, `sht_pump.awc`) | Your own gun, as you hear it |
+| `RESIDENT.rpf` → `weapons.awc` | Shared weapon sounds: NPCs and other players' gunfire |
 
-Replace both. Packs that skip `resident/weapons.awc` are the ones where "only the shooter hears the new sounds".
+Replace both. If you only change `WEAPONS_PLAYER.rpf`, other players and NPCs still sound vanilla. **Same sound for everyone** in the weapon view takes care of this.
 
 Bank names marked **?** in the app are inferred from file names. Listen to confirm.
 
@@ -61,13 +60,14 @@ After a game update, the app notices the change and offers **Scan game again**.
 
 The app never ships Rockstar's files. Like CodeWalker, it reads the decryption keys from your own `gta5.exe`.
 
-## Installing a pack on a server
+## Installing the pack
 
-1. Export the resource into your server's `resources` folder.
-2. Add `ensure <resource_name>` to `server.cfg`.
-3. Restart the server. Players download the sounds when they join.
+- **FiveM:** drag `WEAPONS_PLAYER.rpf` and `RESIDENT.rpf` into `%localappdata%\FiveM\FiveM.app\mods`. To find it: right-click FiveM, choose *Open file location*, then open `FiveM.app\mods`; create the folder if it's missing.
+- **Single player (OpenIV):** put both files in `<GTA V>\mods\x64\audio\sfx`. This needs OpenIV.asi.
+- **Don't overwrite the originals** in `<GTA V>\x64\audio\sfx`. The exported archives are unencrypted mod archives, and FiveM refuses to start with modified archives in the game folder.
+- **To go back to vanilla,** delete the files from the mods folder.
 
-Test with a second client so you hear both your own shots and other players' shots.
+Some servers run in pure mode and block client mods. Test with a second player so you hear both your own shots and other players' shots.
 
 ## Development
 
@@ -93,6 +93,7 @@ To run the optional real-file round-trip tests, point `AWC_SAMPLES_DIR` at a fol
 
 - **Commands:**
   - `scan` builds the weapon index and extracts the gun banks.
+  - `build-rpf` rebuilds `WEAPONS_PLAYER.rpf`/`RESIDENT.rpf` as fresh OPEN archives. It copies every original file (decrypted) and swaps in the replaced banks, then reads the result back to verify it.
   - `list` and `extract` work on banks directly.
   - All commands output JSON.
 - **Building.** `npm run build:bridge` fetches CodeWalker's source at a pinned commit into `bridge/.codewalker/` (git-ignored) and builds CodeWalker.Core. It then publishes the bridge, with CodeWalker inside, as a self-contained executable in `resources/bridge/`, which electron-builder packages.
@@ -112,7 +113,7 @@ To run the optional real-file round-trip tests, point `AWC_SAMPLES_DIR` at a fol
 | `src/core/` | Pure TypeScript with no Electron or DOM dependencies, fully unit-tested |
 | `src/core/awc/` | AWC reader/writer, peak data, IMA ADPCM decoding, stream replacement, CodeWalker XML import |
 | `src/core/dsp.ts` | Shaping pipeline (trim, fades, normalise, windowed-sinc resampling, dithered 16-bit) |
-| `src/core/build.ts` | Turns a project plus templates into the resource files |
+| `src/core/build.ts` | Applies a project to the template banks (the bridge then packs them into `.rpf` archives) |
 | `src/main/` | Electron main process: dialogs, template library, project files, export, CodeWalker bridge runner |
 | `bridge/` | .NET 8 CodeWalker bridge: scans the game (weapons, sound graphs, banks) and extracts banks |
 | `src/core/weapons.ts`, `src/core/soundgraph.ts` | Weapon index, gun parts, and the in-game shot planner |

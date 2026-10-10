@@ -49,10 +49,3 @@ export function unpackProject(bytes: Uint8Array): { json: string; sources: Proje
   })
   return { json: strFromU8(projectBytes), sources }
 }
-
-/** Zip of an exported resource: every file under a top-level <resourceName>/ folder. */
-export function zipResource(resourceName: string, files: { path: string; bytes: Uint8Array }[]): Uint8Array {
-  const z: Zippable = {}
-  for (const f of files) z[`${resourceName}/${f.path}`] = f.bytes
-  return zipSync(z, { level: 6 })
-}

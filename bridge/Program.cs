@@ -35,6 +35,7 @@ public static class Program
                 "list" => Commands.List(opts),
                 "extract" => Commands.Extract(opts),
                 "scan" => GameScan.Run(opts),
+                "build-rpf" => RpfBuild.Run(opts),
                 "make-test-game" => TestGame.Make(opts),
                 _ => throw new BridgeException("usage", $"Unknown command '{opts.Command}'.\n{Usage}")
             };
@@ -57,6 +58,8 @@ public static class Program
         Usage: gunpack-bridge <command> [options]
           probe   --gta <GTA V folder>                      check the game folder and decryption keys
           scan    --gta <GTA V folder> --out <dir>          index every gun's sounds and extract their banks
+          build-rpf --gta <GTA V folder> --out <dir> --bank <pack>/<bank>=<file.awc>...
+                                                            rebuild WEAPONS_PLAYER.rpf / RESIDENT.rpf (OPEN) with replaced banks
           list    --gta <GTA V folder>                      list weapon sound banks
           extract --gta <GTA V folder> --out <dir> [--bank <pack>/<file>]...
                                                             extract banks as unencrypted .awc files

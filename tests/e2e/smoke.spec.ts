@@ -1,10 +1,11 @@
 import { _electron as electron, expect, test, type ElectronApplication } from '@playwright/test'
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { parseAwc } from '../../src/core/awc/read'
 import { getFormat } from '../../src/core/awc/types'
 import { encodeWav16 } from '../../src/core/wav'
+import { runBridge, type ExtractResult } from '../../src/main/bridge'
 import { bridgeExe, makeFakeGame, repoRoot, testAwcKey } from '../fakeGame'
 
 const shots = process.env.SCREENSHOT_DIR
@@ -77,22 +78,42 @@ test('first launch: find GTA V, edit a gun, preview it and export', async () => 
   await expect(page.locator('.bank-item[title="WEAPON_PISTOL"]')).toContainText('4 changed')
   if (shots) await page.screenshot({ path: join(shots, '2-weapon.png') })
 
-  // export both your gun's bank and the shared bank
-  await page.getByRole('button', { name: /^Export/ }).click()
-  await page.getByRole('textbox', { name: 'Resource name' }).fill('E2E Pack')
-  await page.getByRole('button', { name: 'Build' }).click()
-  await expect(page.getByText('audio/sfx/weapons_player/ptl_pistol.awc — 3 replaced')).toBeVisible()
-  await expect(page.getByText('audio/sfx/resident/weapons.awc — 1 replaced')).toBeVisible()
+  // export rebuilt WEAPONS_PLAYER.rpf and RESIDENT.rpf
+  await page.getByRole('button', { name: /^Export \(/ }).click()
+  const exportDialog = page.getByRole('dialog', { name: 'Export sound pack' })
+  await exportDialog.getByRole('textbox', { name: 'Pack name' }).fill('E2E Pack')
+  await expect(exportDialog.getByText('ptl_pistol.awc (3 replaced)')).toBeVisible()
+  await expect(exportDialog.getByText('weapons.awc (1 replaced)')).toBeVisible()
   if (shots) await page.screenshot({ path: join(shots, '3-export.png') })
   await stubOpen(app, [outDir])
-  await page.getByRole('button', { name: 'Save folder…' }).click()
-  await expect(page.getByText(/Saved to/)).toBeVisible()
+  await exportDialog.getByRole('button', { name: 'Export…' }).click()
+  await expect(exportDialog.getByText(/Saved to/)).toBeVisible({ timeout: 30_000 })
+  if (shots) await page.screenshot({ path: join(shots, '4-exported.png') })
 
-  const resource = join(outDir, 'e2e_pack')
-  const manifest = readFileSync(join(resource, 'fxmanifest.lua'), 'utf8')
-  expect(manifest).toContain("data_file 'AUDIO_WAVEPACK' 'audio/sfx/weapons_player'")
-  expect(manifest).toContain("data_file 'AUDIO_WAVEPACK' 'audio/sfx/resident'")
-  const bank = parseAwc(new Uint8Array(readFileSync(join(resource, 'audio/sfx/weapons_player/ptl_pistol.awc'))))
+  const pack = join(outDir, 'e2e_pack')
+  expect(readFileSync(join(pack, 'README.txt'), 'utf8')).toContain('FiveM.app\\mods')
+  for (const f of ['WEAPONS_PLAYER.rpf', 'RESIDENT.rpf']) {
+    const b = readFileSync(join(pack, f))
+    expect(b.readUInt32LE(0)).toBe(0x52504637) // RPF7
+    expect(b.readUInt32LE(12)).toBe(0x4e45504f) // OPEN
+  }
+  // read the archives back like the game would
+  const game2 = join(work, 'game2')
+  mkdirSync(join(game2, 'x64', 'audio', 'sfx'), { recursive: true })
+  writeFileSync(join(game2, 'gta5.exe'), 'MZ')
+  for (const f of ['WEAPONS_PLAYER.rpf', 'RESIDENT.rpf']) copyFileSync(join(pack, f), join(game2, 'x64', 'audio', 'sfx', f))
+  const ex = await runBridge<ExtractResult>(bridgeExe, [
+    'extract',
+    '--gta',
+    game2,
+    '--no-keys',
+    '--test-awc-key',
+    testAwcKey,
+    '--out',
+    join(work, 'check')
+  ])
+  expect(ex.errors).toEqual([])
+  const bank = parseAwc(new Uint8Array(readFileSync(ex.extracted.find((e) => e.file === 'ptl_pistol.awc')!.path)))
   const body = getFormat(bank.streams.find((s) => s.id === 0x16ef0ea5)!)!
   expect(body.sampleRate).toBe(44100)
   expect(body.samples).toBeGreaterThan(20000)

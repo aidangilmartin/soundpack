@@ -17,7 +17,7 @@ export interface BankInfo {
 export const PACK_WEAPONS_PLAYER = 'weapons_player'
 export const PACK_RESIDENT = 'resident'
 
-/** Wave packs FiveM gun packs are known to override via AUDIO_WAVEPACK. */
+/** Wave packs gun sound packs replace (WEAPONS_PLAYER.rpf and RESIDENT.rpf). */
 export const KNOWN_PACKS = [PACK_WEAPONS_PLAYER, PACK_RESIDENT]
 
 const wp = (file: string, label: string, category: BankCategory, certainty: 'name' | 'guess' = 'name'): BankInfo => ({

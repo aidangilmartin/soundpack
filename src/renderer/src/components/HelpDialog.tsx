@@ -32,13 +32,16 @@ export function HelpDialog({ onClose }: Props) {
             (outdoors/indoors) is an approximation of the game's reverb, so the preview is close but not identical to in-game.
           </li>
           <li>
-            <b>Export.</b> The app writes a FiveM resource with <span className="mono">fxmanifest.lua</span> and the changed sound banks.
-            Put it in your server's resources folder and add <span className="mono">ensure &lt;name&gt;</span> to server.cfg.
+            <b>Export.</b> The app rebuilds the game's sound archives with your sounds — <span className="mono">WEAPONS_PLAYER.rpf</span>{' '}
+            (your gun) and <span className="mono">RESIDENT.rpf</span> (other players and NPCs) — into a folder you choose. Drag them into{' '}
+            <span className="mono">%localappdata%\FiveM\FiveM.app\mods</span> for FiveM, or{' '}
+            <span className="mono">GTA V\mods\x64\audio\sfx</span> for single player with OpenIV. Don't overwrite the originals in the game
+            folder.
           </li>
         </ol>
         <p className="small muted">
-          Only banks you change are included; every untouched stream is copied unchanged. Replace both the weapons_player bank and
-          resident/weapons.awc, or other players may still hear vanilla shots. Always test in-game with a second client.
+          Everything you don't change is copied over from your game unchanged. Change both your gun and what others hear, or other players
+          may still hear vanilla shots. Always test in-game with a second client.
         </p>
         <p className="small muted">Your projects (.gunpack) keep your own audio files, never game files.</p>
         <p className="small muted">

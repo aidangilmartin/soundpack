@@ -3,51 +3,18 @@ import { makeBank } from './awc/fixtures'
 import { parseAwc } from './awc/read'
 import { decodeStreamPcm } from './awc/replace'
 import { getFormat } from './awc/types'
-import { buildResource } from './build'
+import { buildBanks } from './build'
 import { DEFAULT_SHAPE } from './dsp'
-import { generateManifest, sanitizeResourceName } from './manifest'
 import { assignSource, bankKey, newProject, silenceStreams } from './project'
 
 const tone = (n: number): Float32Array => Float32Array.from({ length: n }, (_, i) => Math.sin(i / 5) * 0.8)
 
-describe('manifest', () => {
-  it('sanitizes resource names', () => {
-    expect(sanitizeResourceName(' My Gun Pack! ')).toBe('my_gun_pack')
-    expect(sanitizeResourceName('***')).toBe('gunpack')
-  })
-
-  it('lists files and registers each wave pack once', () => {
-    const lua = generateManifest({ resourceName: 'pack', author: "O'Brien", description: 'x', resourceVersion: '1.0.0' }, [
-      'audio/sfx/weapons_player/smg_smg.awc',
-      'fxmanifest.lua',
-      'audio/sfx/resident/weapons.awc',
-      'audio/sfx/weapons_player/ptl_pistol.awc'
-    ])
-    expect(lua).toMatchInlineSnapshot(`
-      "fx_version 'cerulean'
-      game 'gta5'
-
-      name 'pack'
-      description 'x'
-      author 'O\\'Brien'
-      version '1.0.0'
-
-      files {
-        'audio/sfx/resident/weapons.awc',
-        'audio/sfx/weapons_player/ptl_pistol.awc',
-        'audio/sfx/weapons_player/smg_smg.awc'
-      }
-
-      data_file 'AUDIO_WAVEPACK' 'audio/sfx/resident'
-      data_file 'AUDIO_WAVEPACK' 'audio/sfx/weapons_player'
-      "
-    `)
-  })
-})
-
-describe('buildResource', () => {
+describe('buildBanks', () => {
   const template = makeBank()
-  const templates = new Map([[bankKey('weapons_player', 'ptl_pistol.awc'), template]])
+  const templates = new Map([
+    [bankKey('weapons_player', 'ptl_pistol.awc'), template],
+    [bankKey('resident', 'weapons.awc'), template]
+  ])
   const source = { id: 's1', fileName: 'shot.wav', channels: 1, sampleRate: 48000, durationMs: 250 }
   const sources = new Map([['s1', { sampleRate: 48000, channels: [tone(12000)] }]])
 
@@ -63,16 +30,14 @@ describe('buildResource', () => {
       []
     )
     project = silenceStreams(project, 'weapons_player', 'ptl_pistol.awc', [0x02032920])
-    const result = buildResource({ project, templates, sources })
+    const result = buildBanks({ project, templates, sources })
 
-    expect(result.resourceName).toBe('test_pack')
-    expect(result.files.map((f) => f.path)).toEqual(['fxmanifest.lua', 'README.txt', 'audio/sfx/weapons_player/ptl_pistol.awc'])
-    expect(result.banks).toEqual([{ pack: 'weapons_player', file: 'ptl_pistol.awc', replaced: 1, silenced: 1 }])
-    expect(result.warnings.some((w) => w.includes('resident/weapons.awc'))).toBe(true)
-    const manifest = new TextDecoder().decode(result.files[0].bytes)
-    expect(manifest).toContain("data_file 'AUDIO_WAVEPACK' 'audio/sfx/weapons_player'")
+    expect(result.packName).toBe('test_pack')
+    expect(result.archives).toEqual(['WEAPONS_PLAYER.rpf'])
+    expect(result.banks.map((b) => [b.pack, b.file, b.replaced, b.silenced])).toEqual([['weapons_player', 'ptl_pistol.awc', 1, 1]])
+    expect(result.warnings.some((w) => w.includes('RESIDENT.rpf'))).toBe(true)
 
-    const awc = parseAwc(result.files[2].bytes)
+    const awc = parseAwc(result.banks[0].bytes)
     const replaced = awc.streams.find((s) => s.id === 0x16ef0ea5)!
     expect(getFormat(replaced)!.sampleRate).toBe(44100) // template rate kept
     expect(getFormat(replaced)!.samples).toBe(Math.round(12000 * (44100 / 48000)))
@@ -82,22 +47,32 @@ describe('buildResource', () => {
     expect(Array.from(decodeStreamPcm(untouched).pcm)).toEqual(Array.from(decodeStreamPcm(orig).pcm))
   })
 
+  it('rebuilds both archives when both packs change, without the RESIDENT warning', () => {
+    let project = assignSource(newProject(), 'weapons_player', 'ptl_pistol.awc', [0x16ef0ea5], source, DEFAULT_SHAPE, [])
+    project = assignSource(project, 'resident', 'weapons.awc', [0x16ef0ea5], source, DEFAULT_SHAPE, [])
+    const r = buildBanks({ project, templates, sources })
+    expect(r.archives).toEqual(['WEAPONS_PLAYER.rpf', 'RESIDENT.rpf'])
+    expect(r.warnings.some((w) => w.includes('RESIDENT.rpf'))).toBe(false)
+  })
+
+  it('skips banks outside the two archives', () => {
+    let project = assignSource(newProject(), 'dlc_heist', 'guns.awc', [1], source, DEFAULT_SHAPE, [])
+    expect(() => buildBanks({ project, templates, sources })).toThrow(/Nothing to export/)
+    project = assignSource(project, 'weapons_player', 'ptl_pistol.awc', [0x16ef0ea5], source, DEFAULT_SHAPE, [])
+    const r = buildBanks({ project, templates, sources })
+    expect(r.warnings).toContain('dlc_heist/guns.awc is skipped: only WEAPONS_PLAYER.rpf and RESIDENT.rpf can be rebuilt.')
+  })
+
   it('fails clearly when something is missing', () => {
-    expect(() => buildResource({ project: newProject(), templates, sources })).toThrow(/Nothing to export/)
     const project = assignSource(newProject(), 'weapons_player', 'smg_smg.awc', [1], source, DEFAULT_SHAPE, [])
-    expect(() => buildResource({ project, templates, sources })).toThrow(/template for weapons_player\/smg_smg.awc/)
+    expect(() => buildBanks({ project, templates, sources })).toThrow(/smg_smg.awc isn't in your library/)
     const p2 = assignSource(newProject(), 'weapons_player', 'ptl_pistol.awc', [0x16ef0ea5], source, DEFAULT_SHAPE, [])
-    expect(() => buildResource({ project: p2, templates, sources: new Map() })).toThrow(/audio file/)
+    expect(() => buildBanks({ project: p2, templates, sources: new Map() })).toThrow(/audio file/)
   })
 
   it('warns about streams missing from the template', () => {
     const project = assignSource(newProject(), 'weapons_player', 'ptl_pistol.awc', [0x0aa87351, 42], source, DEFAULT_SHAPE, [])
-    const r = buildResource({
-      project,
-      templates,
-      sources,
-      names: new Map([[bankKey('weapons_player', 'ptl_pistol.awc'), { 42: 'ghost' }]])
-    })
-    expect(r.warnings).toContain('ptl_pistol.awc ghost is not in the template and was skipped.')
+    const r = buildBanks({ project, templates, sources, names: new Map([[bankKey('weapons_player', 'ptl_pistol.awc'), { 42: 'ghost' }]]) })
+    expect(r.warnings).toContain("ptl_pistol.awc ghost is not in the game's bank and was skipped.")
   })
 })

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
 import { decodeStreamPcm } from '@core/awc/replace'
 import { getFormat } from '@core/awc/types'
-import { buildResource, type BuildResult } from '@core/build'
+import { buildBanks, type BuildResult } from '@core/build'
 import { DEFAULT_SHAPE, shapeAudio, type ChannelMode, type ShapeSettings } from '@core/dsp'
 import {
   addSource,
@@ -23,7 +23,7 @@ import {
 } from '@core/project'
 import { expandToAudiences, weaponParts } from '@core/weapons'
 import type { AudioData } from '@core/wav'
-import type { ExportMode, ImportReport, LibraryTemplate, PickedFile, ScanReport, StoredWeaponIndex } from '@shared/ipc'
+import type { ExportArchivesResult, ImportReport, LibraryTemplate, PickedFile, ScanReport, StoredWeaponIndex } from '@shared/ipc'
 import { decodeAudio, player } from './audio'
 import { BankView } from './components/BankView'
 import { ExportDialog } from './components/ExportDialog'
@@ -378,11 +378,14 @@ export function App() {
       names.set(bankKey(b.pack, b.file), n)
     }
     const audio = new Map<string, AudioData>([...sources].map(([id, s]) => [id, s.audio]))
-    return buildResource({ project, templates, sources: audio, names })
+    return buildBanks({ project, templates, sources: audio, names })
   }
 
-  const saveExport = async (result: BuildResult, mode: ExportMode): Promise<string | null> =>
-    window.api.exportResource(result.resourceName, result.files, mode)
+  const exportArchives = async (result: BuildResult, packName: string): Promise<ExportArchivesResult | null> =>
+    window.api.exportArchives(
+      packName,
+      result.banks.map((b) => ({ pack: b.pack, file: b.file, bytes: b.bytes }))
+    )
 
   const setLabel = async (ref: StreamRef, text: string): Promise<void> => {
     await window.api.setLabel(labelKey(ref.pack, ref.file, ref.streamId), text || null)
@@ -642,7 +645,7 @@ export function App() {
           project={project}
           onChange={(patch) => setProject((p) => ({ ...p, ...patch }))}
           onBuild={build}
-          onSave={saveExport}
+          onExport={exportArchives}
           onClose={() => setDialog(null)}
         />
       )}

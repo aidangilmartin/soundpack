@@ -7,8 +7,7 @@ import { parseAwc } from '../core/awc/read'
 import { writeAwc } from '../core/awc/write'
 import { encodeWav16 } from '../core/wav'
 import { LabelStore, TemplateLibrary } from './library'
-import { packProject, unpackProject, zipResource } from './projectFile'
-import { unzipSync } from 'fflate'
+import { packProject, unpackProject } from './projectFile'
 
 const tmp = (): string => mkdtempSync(join(tmpdir(), 'gsm-'))
 
@@ -72,10 +71,5 @@ describe('project files', () => {
     expect(back.json).toBe('{"x":1}')
     expect(back.sources).toEqual([{ id: 's1', fileName: 'my shot.wav', bytes: new Uint8Array([1, 2, 3]) }])
     expect(() => unpackProject(new Uint8Array([1, 2, 3]))).toThrow(/gunpack/)
-  })
-
-  it('zips a resource under its folder name', () => {
-    const z = unzipSync(zipResource('pack', [{ path: 'fxmanifest.lua', bytes: new Uint8Array([65]) }]))
-    expect(Object.keys(z)).toEqual(['pack/fxmanifest.lua'])
   })
 })

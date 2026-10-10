@@ -2,22 +2,22 @@ import { app, BrowserWindow, dialog, ipcMain, shell, type OpenDialogOptions } fr
 import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { basename, dirname, join, normalize, sep } from 'node:path'
-import { sanitizeResourceName } from '../core/manifest'
+import { basename, join } from 'node:path'
+import { installReadme, PACK_ARCHIVES, sanitizePackName } from '../core/pack'
 import type { WeaponIndex } from '../core/weapons'
 import {
   IPC,
-  type ExportFile,
-  type ExportMode,
+  type BankFile,
+  type ExportArchivesResult,
   type GameSettings,
   type ProjectFileSource,
   type ScanReport,
   type StoredWeaponIndex
 } from '../shared/ipc'
-import { bridgePath, runBridge, type ScanResult } from './bridge'
+import { bridgePath, runBridge, type BuildRpfResult, type ScanResult } from './bridge'
 import { detectGtaFolder, isGtaFolder } from './gamePaths'
 import { LabelStore, SettingsStore, TemplateLibrary } from './library'
-import { packProject, unpackProject, zipResource } from './projectFile'
+import { packProject, unpackProject } from './projectFile'
 
 // Lets automated tests run against a throwaway profile.
 if (process.env.GSM_USER_DATA) app.setPath('userData', process.env.GSM_USER_DATA)
@@ -173,46 +173,49 @@ function registerIpc(): void {
     return { path, ...unpackProject(new Uint8Array(await readFile(path))) }
   })
 
-  ipcMain.handle(IPC.exportResource, async (_e, name: string, files: ExportFile[], mode: ExportMode) => {
-    const resourceName = sanitizeResourceName(name)
-    if (mode === 'zip') {
-      const r = win
-        ? await dialog.showSaveDialog(win, {
-            title: 'Export resource as .zip',
-            defaultPath: `${resourceName}.zip`,
-            filters: [{ name: 'Zip', extensions: ['zip'] }]
-          })
-        : await dialog.showSaveDialog({ defaultPath: `${resourceName}.zip` })
-      if (r.canceled || !r.filePath) return null
-      await writeFile(r.filePath, zipResource(resourceName, files))
-      return r.filePath
-    }
-    const [parent] = await pick({
-      title: 'Choose where to create the resource folder (e.g. your server resources folder)',
-      properties: ['openDirectory', 'createDirectory']
-    })
+  ipcMain.handle(IPC.exportArchives, async (_e, name: string, banks: BankFile[]): Promise<ExportArchivesResult | null> => {
+    const game = await gameSettings()
+    if (!game.gtaPath || !game.gtaValid) throw new Error('The GTA V folder is needed to rebuild the archives. Scan the game first.')
+    const [parent] = await pick({ title: 'Choose where to save the sound pack', properties: ['openDirectory', 'createDirectory'] })
     if (!parent) return null
-    const root = join(parent, resourceName)
-    if (existsSync(root)) {
+    const packName = sanitizePackName(name)
+    const folder = join(parent, packName)
+    const ours = ['README.txt', ...Object.values(PACK_ARCHIVES)]
+    const existing = ours.filter((f) => existsSync(join(folder, f)))
+    if (existing.length) {
       const opts = {
         type: 'warning' as const,
         buttons: ['Replace', 'Cancel'],
         defaultId: 1,
         cancelId: 1,
-        message: `"${resourceName}" already exists here.`,
-        detail: 'Replacing deletes the existing folder first.'
+        message: `"${packName}" already has ${existing.join(', ')}.`,
+        detail: 'Replacing overwrites those files.'
       }
       const answer = win ? await dialog.showMessageBox(win, opts) : await dialog.showMessageBox(opts)
       if (answer.response !== 0) return null
-      await rm(root, { recursive: true, force: true })
+      for (const f of existing) await rm(join(folder, f), { force: true })
     }
-    for (const f of files) {
-      const target = normalize(join(root, f.path))
-      if (!target.startsWith(root + sep)) throw new Error(`Refusing to write outside the resource folder: ${f.path}`)
-      await mkdir(dirname(target), { recursive: true })
-      await writeFile(target, f.bytes)
+    await mkdir(folder, { recursive: true })
+
+    const tmp = await mkdtemp(join(tmpdir(), 'gsm-export-'))
+    try {
+      const args = ['build-rpf', '--gta', game.gtaPath, '--out', folder]
+      for (const b of banks) {
+        const path = join(tmp, `${b.pack}__${b.file}`)
+        await writeFile(path, b.bytes)
+        args.push('--bank', `${b.pack}/${b.file}=${path}`)
+      }
+      const result = await runBridge<BuildRpfResult>(bridgeExe(), args, progress)
+      const files = result.archives.map((a) => a.file)
+      await writeFile(join(folder, 'README.txt'), installReadme(packName, files).replace(/\n/g, '\r\n'))
+      return {
+        folder,
+        archives: result.archives.map((a) => ({ file: a.file, path: a.path, size: a.size, replaced: a.replaced })),
+        errors: result.errors.map((e) => `${e.pack}/${e.file}: ${e.error}`)
+      }
+    } finally {
+      await rm(tmp, { recursive: true, force: true })
     }
-    return root
   })
 
   ipcMain.handle(IPC.getGameSettings, () => gameSettings())
