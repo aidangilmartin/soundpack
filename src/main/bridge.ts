@@ -37,6 +37,8 @@ export interface ExtractedBank {
 export interface ScanResult {
   game: GameInfo
   indexPath: string
+  /** sound-map.json: what every stream in WEAPONS_PLAYER / RESIDENT is for (see core/usage.ts). */
+  mapPath: string
   extracted: ExtractedBank[]
   errors: { pack: string; file: string; error: string }[]
   weapons: number

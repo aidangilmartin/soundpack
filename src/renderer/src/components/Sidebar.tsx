@@ -1,9 +1,12 @@
+import { useState, type ReactNode } from 'react'
 import { BankCategory, CATEGORY_LABELS } from '@core/catalog'
 import type { BankItem } from '../model'
 
 interface Props {
   items: BankItem[]
   activeKey: string | null
+  /** Shown above the list (the "What did I hear?" lookup). */
+  top?: ReactNode
   onSelect: (item: BankItem) => void
   onExtractFromGame: () => void
   onImportAwc: () => void
@@ -11,12 +14,28 @@ interface Props {
 }
 
 const ORDER: BankCategory[] = ['shared', 'pistol', 'smg', 'rifle', 'shotgun', 'sniper', 'mg', 'heavy', 'other']
+const ARCHIVE_ORDER = ['WEAPONS_PLAYER.rpf', 'RESIDENT.rpf', 'Imported']
 
-export function Sidebar({ items, activeKey, onSelect, onExtractFromGame, onImportAwc, onImportCodeWalker }: Props) {
+export function Sidebar({ items, activeKey, top, onSelect, onExtractFromGame, onImportAwc, onImportCodeWalker }: Props) {
+  const [query, setQuery] = useState('')
   const imported = items.filter((i) => i.template).length
+  const q = query.trim().toLowerCase()
+  const shown = q
+    ? items.filter((i) => `${i.file} ${i.label} ${i.summary?.label ?? ''} ${i.summary?.weapons.join(' ') ?? ''}`.toLowerCase().includes(q))
+    : items
+  // with the sound map, banks are grouped by archive; without it, by the catalog's gun categories
+  const byArchive = items.some((i) => i.group)
+  const groups: { title: string; items: BankItem[] }[] = byArchive
+    ? [...new Set([...ARCHIVE_ORDER, ...shown.map((i) => i.group ?? 'Imported')])].map((g) => ({
+        title: g,
+        items: shown.filter((i) => (i.group ?? 'Imported') === g)
+      }))
+    : ORDER.map((cat) => ({ title: CATEGORY_LABELS[cat], items: shown.filter((i) => i.category === cat) }))
+
   return (
     <aside className="sidebar">
       <div className="sidebar-actions">
+        {top}
         <button className="btn" onClick={onExtractFromGame} title="Read every gun's sounds from your GTA V install again">
           Scan game again…
         </button>
@@ -33,32 +52,43 @@ export function Sidebar({ items, activeKey, onSelect, onExtractFromGame, onImpor
           </button>
         </div>
         <p className="muted small">
-          {imported} bank{imported === 1 ? '' : 's'} in your library.
+          {imported} bank{imported === 1 ? '' : 's'} in your library{byArchive ? ` · ${items.length} in the game's archives` : ''}.
         </p>
+        <input
+          type="search"
+          placeholder="Filter banks or weapons"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          aria-label="Filter banks"
+        />
       </div>
       <nav className="bank-list" aria-label="Sound banks">
-        {ORDER.map((cat) => {
-          const group = items.filter((i) => i.category === cat)
-          if (group.length === 0) return null
+        {groups.map((group) => {
+          if (group.items.length === 0) return null
           return (
-            <section key={cat}>
-              <h3>{CATEGORY_LABELS[cat]}</h3>
+            <section key={group.title}>
+              <h3>{group.title}</h3>
               <ul>
-                {group.map((item) => (
+                {group.items.map((item) => (
                   <li key={item.key}>
                     <button
                       className={`bank-item${item.key === activeKey ? ' active' : ''}${item.template ? '' : ' missing'}`}
                       onClick={() => onSelect(item)}
-                      title={`${item.pack}/${item.file}`}
+                      title={`${item.pack}/${item.file}${item.summary ? `\n${item.summary.label} · ${item.summary.detail}` : ''}`}
                     >
                       <span className="bank-label">
                         {item.label}
                         {item.certainty === 'guess' && item.category !== 'other' && <span className="guess">?</span>}
+                        {item.summary && item.summary.label !== item.label && <span className="bank-summary">{item.summary.label}</span>}
                       </span>
                       <span className="bank-meta">
                         {item.changed > 0 && <span className="badge accent">{item.changed} changed</span>}
                         {item.template ? (
                           <span className="muted">{item.template.streamCount}</span>
+                        ) : item.summary ? (
+                          <span className="muted" title="Not loaded yet: open it to load it from your game">
+                            {item.summary.streams}
+                          </span>
                         ) : (
                           <span className="muted">not imported</span>
                         )}
@@ -70,6 +100,7 @@ export function Sidebar({ items, activeKey, onSelect, onExtractFromGame, onImpor
             </section>
           )
         })}
+        {shown.length === 0 && <p className="muted small pad">No banks match.</p>}
       </nav>
     </aside>
   )

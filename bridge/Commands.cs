@@ -15,6 +15,9 @@ public static class Commands
 
     const string SfxDir = @"x64\audio\sfx\";
 
+    /// <summary>"weapons_player" → "WEAPONS_PLAYER.rpf".</summary>
+    public static string ArchiveName(string pack) => pack.ToUpperInvariant() + ".rpf";
+
     public sealed record GameInfo(string GtaPath, string Exe, bool Gen9, string? CodeWalkerVersion, bool KeysLoaded);
     public sealed record BankEntry(string Pack, string File, long Size, string Archive);
     public sealed record ExtractedBank(string Pack, string File, string Path, int Streams, bool WasEncrypted, Dictionary<string, string> Names);
@@ -107,17 +110,24 @@ public static class Commands
 
     static bool namesLoaded;
 
-    /// <summary>Feeds CodeWalker's known-strings list into its hash index so streams get readable names.</summary>
-    internal static void EnsureNames()
+    /// <summary>
+    /// Feeds CodeWalker's known-strings list (plus an optional name list the user supplies with
+    /// --names) into its hash index so streams and sounds get readable names.
+    /// </summary>
+    internal static void EnsureNames(string? extra = null)
     {
         if (namesLoaded) return;
         namesLoaded = true;
-        var path = Path.Combine(AppContext.BaseDirectory, "strings.txt");
-        if (!File.Exists(path)) return;
-        foreach (var line in File.ReadLines(path))
+        foreach (var path in new[] { Path.Combine(AppContext.BaseDirectory, "strings.txt"), extra })
         {
-            var s = line.Trim();
-            if (s.Length > 0 && !s.StartsWith("//")) JenkIndex.Ensure(s);
+            if (path == null || !File.Exists(path)) continue;
+            foreach (var line in File.ReadLines(path))
+            {
+                var s = line.Trim();
+                if (s.Length == 0 || s.StartsWith("//")) continue;
+                JenkIndex.Ensure(s);
+                JenkIndex.Ensure(s.ToLowerInvariant());
+            }
         }
     }
 

@@ -782,3 +782,113 @@ a {
 .role-group table.streams td:first-child {
   padding-left: 16px;
 }
+
+/* sound usage */
+.bank-summary {
+  display: block;
+  font-size: 11px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.usage-cell {
+  /* takes the room left in the row and truncates */
+  width: 100%;
+  max-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.col-code {
+  width: 36px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.panel.usage h4 {
+  margin: 0 0 6px;
+}
+.uses {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.use {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+.use:last-child {
+  border-bottom: 0;
+}
+.use-head {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+.use .btn {
+  align-self: flex-start;
+}
+.use-path summary {
+  cursor: pointer;
+}
+.use-path ol {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  word-break: break-word;
+}
+.badge.aud-you {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.badge.aud-others {
+  color: var(--ok);
+}
+.badge.aud-anim,
+.badge.aud-code {
+  border: 1px solid var(--border);
+  background: transparent;
+}
+.field-group {
+  border-bottom: 1px solid var(--border);
+}
+.field-group > summary {
+  cursor: pointer;
+  padding: 10px 16px;
+  font-weight: 600;
+}
+.field-group > summary .muted {
+  font-weight: 400;
+  margin-left: 6px;
+}
+.field-group .role-group:last-child {
+  border-bottom: 0;
+}
+.code-lookup {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 8px 0;
+}
+.code-lookup .row input {
+  flex: 1;
+  min-width: 0;
+}
+.code-lookup.compact {
+  margin: 0 0 6px;
+}
+fieldset.scope {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 8px 0;
+}

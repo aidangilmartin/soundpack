@@ -18,7 +18,7 @@ describe.skipIf(!existsSync(exe))('bridge scan (integration)', () => {
       progress.push(m)
     )
     expect(r.errors).toEqual([])
-    expect(r.weapons).toBe(2)
+    expect(r.weapons).toBe(2) // the knife is in weapons.meta but isn't a gun
     expect(progress).toContain('Resolving weapon sounds')
 
     const index = JSON.parse(readFileSync(r.indexPath, 'utf8')) as WeaponIndex
@@ -28,7 +28,15 @@ describe.skipIf(!existsSync(exe))('bridge scan (integration)', () => {
     expect(pistol.timeBetweenShots).toBeCloseTo(0.15)
     expect(pistol.variants.map((v) => v.category)).toEqual(['player', 'fallback'])
     const player = pistol.variants[0]
-    expect(player.roles).toEqual({ fire: joaat('pistol_player_fire'), report: joaat('pistol_report') })
+    // the 8 shot parts keep their short keys; every other sound field is listed too
+    expect(player.roles).toEqual({
+      fire: joaat('pistol_player_fire'),
+      report: joaat('pistol_report'),
+      echo: joaat('pistol_echo'),
+      heftSound: joaat('pistol_heft'),
+      reloadSounds: joaat('pistol_reload_set'),
+      slowMoFireSound: joaat('pistol_slowmo')
+    })
     expect(player.reportVolumeDelta).toBe(-3)
     expect(player.reportPredelayDelta).toBe(20)
 

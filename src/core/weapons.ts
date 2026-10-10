@@ -3,19 +3,32 @@
  * (your own gun vs. how others hear it) and the sound graph behind each part of a gunshot.
  */
 
-export type Role = 'fire' | 'auto' | 'suppressed' | 'report' | 'echo' | 'suppressedEcho' | 'shellCasing' | 'interior'
+import { FieldGroup, prettyName, ROLE_KEYS, WEAPON_FIELDS } from './fields'
 
-export const ROLE_ORDER: Role[] = ['fire', 'auto', 'report', 'echo', 'suppressed', 'suppressedEcho', 'interior', 'shellCasing']
+/**
+ * A weapon sound field: 'fire', 'auto', 'suppressed', 'report', 'echo', 'suppressedEcho',
+ * 'shellCasing', 'interior', or any other WeaponSettings sound field in lowerCamel ('heftSound',
+ * 'slowMoFireSound', 'reloadSounds'…). See fields.ts.
+ */
+export type Role = string
 
-export const ROLE_LABELS: Record<Role, string> = {
-  fire: 'Gunshot',
-  auto: 'Automatic fire',
-  report: 'Distant report',
-  echo: 'Echo / tail',
-  suppressed: 'Suppressed shot',
-  suppressedEcho: 'Suppressed echo',
-  interior: 'Indoor shot',
-  shellCasing: 'Shell casings'
+/** Every known role, grouped (shooting first). Roles the app doesn't know follow in name order. */
+export const ROLE_ORDER: Role[] = ROLE_KEYS
+
+export const ROLE_LABELS: Record<string, string> = Object.fromEntries(Object.entries(WEAPON_FIELDS).map(([k, f]) => [k, f.label]))
+
+export function roleLabel(role: Role): string {
+  return ROLE_LABELS[role] ?? prettyName(role.charAt(0).toUpperCase() + role.slice(1))
+}
+
+export function roleGroup(role: Role): FieldGroup {
+  return WEAPON_FIELDS[role]?.group ?? 'other'
+}
+
+/** A variant's roles in display order. */
+export function orderedRoles(roles: Iterable<Role>): Role[] {
+  const set = new Set(roles)
+  return [...ROLE_ORDER.filter((r) => set.has(r)), ...[...set].filter((r) => !ROLE_ORDER.includes(r)).sort()]
 }
 
 /** Header fields as stored in the game data; absent fields fall back to engine defaults. */
@@ -53,7 +66,7 @@ export interface SoundNode {
 export interface WeaponVariant {
   category: string
   settings: number
-  roles: Partial<Record<Role, number>>
+  roles: Record<Role, number>
   reportVolumeDelta: number
   reportPredelayDelta: number
   tailEnergy: number
@@ -149,7 +162,7 @@ export interface WeaponPart {
 /** The banks and streams behind each part of a weapon variant. Unresolvable waves are skipped. */
 export function weaponParts(index: WeaponIndex, variant: WeaponVariant): WeaponPart[] {
   const parts: WeaponPart[] = []
-  for (const role of ROLE_ORDER) {
+  for (const role of orderedRoles(Object.keys(variant.roles))) {
     const root = variant.roles[role]
     if (!root) continue
     for (const leaf of leaves(index, root)) {

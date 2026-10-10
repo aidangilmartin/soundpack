@@ -54,6 +54,21 @@ public static class TestGame
             RpfFile.CreateFile(dir, "weapons.meta", File.ReadAllBytes(meta));
             made.Add("common/weapons.meta");
         }
+        // animation clip dictionaries from CodeWalker YCD XML, as in x64c.rpf\anim\
+        var ycds = o.All("ycd-xml");
+        if (ycds.Count > 0)
+        {
+            var rpf = RpfBuild.CreateArchive(Path.Combine(root, "x64c.rpf"), "x64c.rpf");
+            var dir = RpfFile.CreateDirectory(rpf.Root, "anim");
+            foreach (var file in ycds)
+            {
+                var ycd = XmlYcd.GetYcd(File.ReadAllText(file));
+                var name = Path.GetFileName(file);
+                if (name.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)) name = name[..^4];
+                RpfFile.CreateFile(dir, name, ycd.Save());
+                made.Add($"anim/{name}");
+            }
+        }
         return new { root, banks = made };
     }
 

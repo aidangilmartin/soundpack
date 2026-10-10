@@ -1,5 +1,6 @@
 /** Contract between the Electron main process and the renderer (exposed as window.api). */
 
+import type { SoundMap } from '../core/usage'
 import type { WeaponIndex } from '../core/weapons'
 
 export interface LibraryTemplate {
@@ -43,6 +44,8 @@ export interface StoredWeaponIndex {
   scannedAt: string
   /** The game exe changed since the scan (e.g. a game update): suggest scanning again. */
   stale: boolean
+  /** Scanned by an older version without the sound usage map: suggest scanning again. */
+  outdated: boolean
 }
 
 export interface GameInfo {
@@ -84,6 +87,17 @@ export interface ExportArchivesResult {
   errors: string[]
 }
 
+export interface ExportIdPackResult {
+  folder: string
+  archives: { file: string; path: string; size: number; replaced: string[] }[]
+  /** Streams that got a label. */
+  labelled: number
+  /** The Windows voice used, or null when the labels are beeps. */
+  voice: string | null
+  warnings: string[]
+  errors: string[]
+}
+
 export interface Api {
   listTemplates(): Promise<LibraryTemplate[]>
   /** Opens a file dialog for .awc files, or imports the given paths when provided (drag & drop). */
@@ -111,10 +125,16 @@ export interface Api {
   /** Reads every gun's sounds from the game, extracts their banks into the library and stores the weapon index. */
   scanGame(): Promise<ScanReport>
   getWeaponIndex(): Promise<StoredWeaponIndex | null>
+  /** What every sound in WEAPONS_PLAYER.rpf / RESIDENT.rpf is for (from the last scan). */
+  getSoundMap(): Promise<SoundMap | null>
+  /** Extracts banks ("pack/bank.awc") from the game into the library. */
+  loadGameBanks(banks: string[]): Promise<ImportReport>
   onGameProgress(listener: (message: string) => void): () => void
 
   /** Rebuilds WEAPONS_PLAYER.rpf / RESIDENT.rpf with the banks into a folder the user picks. */
   exportArchives(name: string, banks: BankFile[]): Promise<ExportArchivesResult | null>
+  /** Builds the in-game ID pack for the given banks into a folder the user picks. */
+  exportIdPack(name: string, banks: string[]): Promise<ExportIdPackResult | null>
   showInFolder(path: string): Promise<void>
   openExternal(url: string): Promise<void>
 }
@@ -136,8 +156,11 @@ export const IPC = {
   setGtaPath: 'game:set-gta',
   scanGame: 'game:scan',
   getWeaponIndex: 'game:weapon-index',
+  getSoundMap: 'game:sound-map',
+  loadGameBanks: 'game:load-banks',
   gameProgress: 'game:progress',
   exportArchives: 'export:archives',
+  exportIdPack: 'export:id-pack',
   showInFolder: 'shell:show',
   openExternal: 'shell:external'
 } as const

@@ -44,6 +44,21 @@ jobs:
       - run: npm run dist:win
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      # the ID pack's spoken labels only work with Windows voices; check the bridge can use them
+      - name: Spoken labels smoke test
+        shell: pwsh
+        run: |
+          '[{"id":"t","text":"pistol 4"}]' | Set-Content -Encoding utf8 phrases.json
+          $line = & resources/bridge/gunpack-bridge.exe speak --in phrases.json --out speech | Select-Object -Last 1
+          Write-Output $line
+          $r = $line | ConvertFrom-Json
+          if ($r.ok) {
+            if (-not (Test-Path speech/t.wav)) { throw 'speak reported success but wrote no WAV' }
+          } elseif ($r.code -eq 'no-tts') {
+            Write-Output '::warning::No Windows voice on this runner; the ID pack falls back to beeps.'
+          } else {
+            throw "speak failed: $($r.error)"
+          }
       - uses: actions/upload-artifact@v4
         with:
           name: gun-soundpack-maker-windows

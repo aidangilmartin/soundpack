@@ -5,6 +5,7 @@
  <ContainerPaths>
   <Item>weapons_player/ptl_pistol</Item>
   <Item>resident/weapons</Item>
+  <Item>resident/explosions</Item>
  </ContainerPaths>
  <Items>
   <Item type="MultitrackSound">
@@ -101,6 +102,150 @@
    </Header>
    <ContainerName>weapons_player/smg_smg</ContainerName>
    <FileName>hash_16EF0EA5</FileName>
+   <WaveSlotIndex value="0" />
+  </Item>
+  <Item type="CrossfadeSound">
+   <Name>pistol_echo</Name>
+   <Header>
+    <Flags value="0xAAAAAAAA" />
+   </Header>
+   <NearSound>pistol_echo_near</NearSound>
+   <FarSound>pistol_echo_far</FarSound>
+   <Mode value="0" />
+   <MinDistance value="20" />
+   <MaxDistance value="80" />
+   <Hysteresis value="0" />
+   <CrossfadeCurve />
+   <DistanceVariable />
+   <MinDistanceVariable />
+   <MaxDistanceVariable />
+   <HysteresisVariable />
+   <CrossfadeVariable />
+  </Item>
+  <Item type="SimpleSound">
+   <Name>pistol_echo_near</Name>
+   <Header>
+    <Flags value="0xAAAAAAAA" />
+   </Header>
+   <ContainerName>weapons_player/ptl_pistol</ContainerName>
+   <FileName>hash_0AA87351</FileName>
+   <WaveSlotIndex value="0" />
+  </Item>
+  <Item type="SimpleSound">
+   <Name>pistol_echo_far</Name>
+   <Header>
+    <Flags value="0xAAAAAAAA" />
+   </Header>
+   <ContainerName>resident/weapons</ContainerName>
+   <FileName>hash_02032920</FileName>
+   <WaveSlotIndex value="0" />
+  </Item>
+  <Item type="CollapsingStereoSound">
+   <Name>pistol_heft</Name>
+   <Header>
+    <Flags value="0xAAAAAAAA" />
+   </Header>
+   <LeftSound>pistol_heft_l</LeftSound>
+   <RightSound>pistol_heft_r</RightSound>
+   <MinDistance value="5" />
+   <MaxDistance value="20" />
+   <MinDistanceVariable />
+   <MaxDistanceVariable />
+   <CrossfadeOverrideVariable />
+   <FrontendLeftPanVariable />
+   <FrontendRightPanVariable />
+   <PositionRelativePanDamping value="0" />
+   <PositionRelativePanDampingVariable />
+   <Mode value="0" />
+  </Item>
+  <Item type="SimpleSound">
+   <Name>pistol_heft_l</Name>
+   <Header>
+    <Flags value="0xAAAAAAAA" />
+   </Header>
+   <ContainerName>resident/weapons</ContainerName>
+   <FileName>hash_02032920</FileName>
+   <WaveSlotIndex value="0" />
+  </Item>
+  <Item type="SimpleSound">
+   <Name>pistol_heft_r</Name>
+   <Header>
+    <Flags value="0xAAAAAAAA" />
+   </Header>
+   <ContainerName>resident/weapons</ContainerName>
+   <FileName>hash_0AA87351</FileName>
+   <WaveSlotIndex value="0" />
+  </Item>
+  <Item type="IfSound">
+   <Name>pistol_slowmo</Name>
+   <Header>
+    <Flags value="0xAAAAAAAA" />
+   </Header>
+   <TrueSound>pistol_player_fire</TrueSound>
+   <FalseSound>pistol_mech</FalseSound>
+   <ConditionVariable>game.slowmo</ConditionVariable>
+   <ConditionType value="2" />
+   <ConditionValue value="0.5" />
+   <RHS />
+  </Item>
+  <Item type="SoundSet">
+   <Name>pistol_reload_set</Name>
+   <Header>
+    <Flags value="0xAAAAAAAA" />
+   </Header>
+   <SoundSets>
+    <Item>
+     <ScriptName>reload</ScriptName>
+     <ChildSound>pistol_reload_wave</ChildSound>
+    </Item>
+   </SoundSets>
+  </Item>
+  <Item type="SimpleSound">
+   <Name>pistol_reload_wave</Name>
+   <Header>
+    <Flags value="0xAAAAAAAA" />
+   </Header>
+   <ContainerName>weapons_player/ptl_pistol</ContainerName>
+   <FileName>hash_02032920</FileName>
+   <WaveSlotIndex value="0" />
+  </Item>
+  <Item type="SoundSet">
+   <Name>hud_soundset</Name>
+   <Header>
+    <Flags value="0xAAAAAAAA" />
+   </Header>
+   <SoundSets>
+    <Item>
+     <ScriptName>beep</ScriptName>
+     <ChildSound>hud_beep</ChildSound>
+    </Item>
+   </SoundSets>
+  </Item>
+  <Item type="SimpleSound">
+   <Name>hud_beep</Name>
+   <Header>
+    <Flags value="0xAAAAAAAA" />
+   </Header>
+   <ContainerName>resident/weapons</ContainerName>
+   <FileName>hash_16EF0EA5</FileName>
+   <WaveSlotIndex value="0" />
+  </Item>
+  <Item type="SimpleSound">
+   <Name>explosion_boom</Name>
+   <Header>
+    <Flags value="0xAAAAAAAA" />
+   </Header>
+   <ContainerName>resident/explosions</ContainerName>
+   <FileName>hash_16EF0EA5</FileName>
+   <WaveSlotIndex value="0" />
+  </Item>
+  <Item type="SimpleSound">
+   <Name>frontend_click</Name>
+   <Header>
+    <Flags value="0xAAAAAAAA" />
+   </Header>
+   <ContainerName>resident/explosions</ContainerName>
+   <FileName>hash_02032920</FileName>
    <WaveSlotIndex value="0" />
   </Item>
  </Items>

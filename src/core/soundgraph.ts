@@ -191,8 +191,9 @@ function walk(index: WeaponIndex, hash: number, acc: Acc, role: Role, state: Pla
     default:
       // Wrapper/OnStop/Looping/Retriggered wrap one main child; anything else that has a choice
       // (sequences, crossfades, game-state switches) is approximated by its first child.
-      if (STATEFUL.has(n.type) || !SINGLE_CHILD.has(n.type) || children.length > 1) state.approximations.add(n.type)
-      if (children.length) walk(index, children[0], a, role, state, out, depth + 1)
+      // (children keep their slots, so empty slots such as an OnStop without a stop sound are 0)
+      if (STATEFUL.has(n.type) || !SINGLE_CHILD.has(n.type) || children.filter((c) => c !== 0).length > 1) state.approximations.add(n.type)
+      if (children[0]) walk(index, children[0], a, role, state, out, depth + 1)
   }
 }
 

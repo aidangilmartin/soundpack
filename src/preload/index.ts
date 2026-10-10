@@ -19,12 +19,15 @@ const api: Api = {
   setGtaPath: (path) => ipcRenderer.invoke(IPC.setGtaPath, path),
   scanGame: () => ipcRenderer.invoke(IPC.scanGame),
   getWeaponIndex: () => ipcRenderer.invoke(IPC.getWeaponIndex),
+  getSoundMap: () => ipcRenderer.invoke(IPC.getSoundMap),
+  loadGameBanks: (banks) => ipcRenderer.invoke(IPC.loadGameBanks, banks),
   onGameProgress: (listener) => {
     const handler = (_e: Electron.IpcRendererEvent, message: string): void => listener(message)
     ipcRenderer.on(IPC.gameProgress, handler)
     return () => ipcRenderer.removeListener(IPC.gameProgress, handler)
   },
   exportArchives: (name, banks) => ipcRenderer.invoke(IPC.exportArchives, name, banks),
+  exportIdPack: (name, banks) => ipcRenderer.invoke(IPC.exportIdPack, name, banks),
   showInFolder: (path) => ipcRenderer.invoke(IPC.showInFolder, path),
   openExternal: (url) => ipcRenderer.invoke(IPC.openExternal, url)
 }

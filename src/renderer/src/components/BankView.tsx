@@ -1,7 +1,9 @@
 import { useMemo, useState, type DragEvent, type KeyboardEvent, type MouseEvent } from 'react'
 import { hex8 } from '@core/hash'
+import type { IdCode } from '@core/idpack'
 import { pairOf } from '@core/pairs'
 import type { ProjectBank } from '@core/project'
+import { streamSummary, usageText, type StreamUsage } from '@core/usage'
 import { assignmentMap, BankItem, fmtDuration, fmtRate, LoadedTemplate, pairsFor, SourceEntry, streamName } from '../model'
 
 interface Props {
@@ -22,9 +24,16 @@ interface Props {
   onImportCodeWalker: () => void
   onRemoveTemplate: () => void
   onChangePack: (pack: string) => void
+  /** What a stream is for, from the sound map (null without a map). */
+  usageOf?: (id: number) => StreamUsage | null
+  /** The stream's ID-pack code. */
+  codeOf?: (id: number) => IdCode | undefined
+  /** Loads this bank from the game into the library (when the sound map lists it). */
+  onLoadFromGame?: () => void
+  loadingFromGame?: boolean
 }
 
-type Filter = 'all' | 'changed' | 'unchanged'
+type Filter = 'all' | 'changed' | 'unchanged' | 'unused'
 type Sort = 'id' | 'length' | 'name'
 
 export function BankView(props: Props) {
@@ -37,17 +46,38 @@ export function BankView(props: Props) {
   const assignments = useMemo(() => assignmentMap(bank), [bank])
   const pairs = useMemo(() => (template ? pairsFor(template, bank) : []), [template, bank])
 
+  const usage = useMemo(() => {
+    const m = new Map<number, StreamUsage>()
+    if (!template || !props.usageOf) return m
+    for (const s of template.summaries) {
+      const u = props.usageOf(s.id)
+      if (u) m.set(s.id, u)
+    }
+    return m
+  }, [template, props.usageOf])
+
   const rows = useMemo(() => {
     if (!template) return []
     const q = query.trim().toLowerCase()
-    let list = template.summaries.map((s) => ({ ...s, name: streamName(template, s.id, labels) }))
-    if (q) list = list.filter((r) => r.name.toLowerCase().includes(q) || hex8(r.id).toLowerCase().includes(q.replace(/^0x/, '')))
+    let list = template.summaries.map((s) => {
+      const u = usage.get(s.id)
+      return { ...s, name: streamName(template, s.id, labels), usage: u, summary: u ? streamSummary(u) : '', code: props.codeOf?.(s.id) }
+    })
+    if (q)
+      list = list.filter(
+        (r) =>
+          r.name.toLowerCase().includes(q) ||
+          hex8(r.id).toLowerCase().includes(q.replace(/^0x/, '')) ||
+          (r.usage && usageText(r.usage).includes(q)) ||
+          (r.code && r.code.code.toLowerCase() === q)
+      )
     if (filter === 'changed') list = list.filter((r) => assignments.has(r.id))
     if (filter === 'unchanged') list = list.filter((r) => !assignments.has(r.id))
+    if (filter === 'unused') list = list.filter((r) => r.usage?.status === 'unused')
     if (sort === 'length') list.sort((a, b) => b.duration - a.duration)
     if (sort === 'name') list.sort((a, b) => a.name.localeCompare(b.name))
     return list
-  }, [template, labels, query, filter, sort, assignments])
+  }, [template, labels, query, filter, sort, assignments, usage, props.codeOf])
 
   if (!item.template) {
     return (
@@ -56,12 +86,32 @@ export function BankView(props: Props) {
         <p className="muted mono">
           {item.pack}/{item.file}
         </p>
-        <p>This sound bank isn't in your library. Scanning the game adds every bank the guns use; other banks can be imported by hand.</p>
-        <div className="row gap">
-          <button className="btn primary" onClick={props.onExtractFromGame}>
-            Scan game…
-          </button>
-        </div>
+        {item.summary && (
+          <p>
+            <b>{item.summary.label}</b> · {item.summary.detail}
+          </p>
+        )}
+        {props.onLoadFromGame ? (
+          <>
+            <p>This bank isn't in your library yet. Load it from your game to listen to it, see what each sound is for and replace them.</p>
+            <div className="row gap">
+              <button className="btn primary" onClick={props.onLoadFromGame} disabled={props.loadingFromGame}>
+                {props.loadingFromGame ? 'Loading…' : 'Load from game'}
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <p>
+              This sound bank isn't in your library. Scanning the game adds every bank the guns use; other banks can be imported by hand.
+            </p>
+            <div className="row gap">
+              <button className="btn primary" onClick={props.onExtractFromGame}>
+                Scan game…
+              </button>
+            </div>
+          </>
+        )}
         <p className="muted small">
           Uses CodeWalker to read{' '}
           <span className="mono">{item.pack === 'resident' ? 'x64/audio/sfx/RESIDENT.rpf' : 'x64/audio/sfx/WEAPONS_PLAYER.rpf'}</span>{' '}
@@ -158,6 +208,11 @@ export function BankView(props: Props) {
                 ? 'from CodeWalker XML'
                 : 'from .awc'}
           </p>
+          {item.summary && (
+            <p className="small">
+              <b>{item.summary.label}</b> · {item.summary.detail}
+            </p>
+          )}
           {item.note && <p className="note small">{item.note}</p>}
         </div>
         <div className="row gap">
@@ -180,7 +235,7 @@ export function BankView(props: Props) {
       <div className="toolbar">
         <input
           type="search"
-          placeholder="Filter by name, label or id"
+          placeholder={usage.size ? 'Filter by name, id, code or what it is for (e.g. echo)' : 'Filter by name, label or id'}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           aria-label="Filter streams"
@@ -189,6 +244,7 @@ export function BankView(props: Props) {
           <option value="all">All streams</option>
           <option value="changed">Changed</option>
           <option value="unchanged">Unchanged</option>
+          {usage.size > 0 && <option value="unused">Unused in the game data</option>}
         </select>
         <select value={sort} onChange={(e) => setSort(e.target.value as Sort)} aria-label="Sort">
           <option value="id">Sort: id</option>
@@ -205,7 +261,13 @@ export function BankView(props: Props) {
           <thead>
             <tr>
               <th className="col-play" />
+              {props.codeOf && (
+                <th className="col-code" title="The stream's number in the ID pack (its code is the bank's words + this number)">
+                  #
+                </th>
+              )}
               <th>Name</th>
+              {usage.size > 0 && <th>Used for</th>}
               <th className="col-id">Id</th>
               <th className="col-num">Length</th>
               <th className="col-num">Rate</th>
@@ -247,11 +309,21 @@ export function BankView(props: Props) {
                       {playing === tagOrig ? '■' : '▶'}
                     </button>
                   </td>
+                  {props.codeOf && (
+                    <td className="col-code muted" title={r.code ? `ID pack code: "${r.code.code}"` : undefined}>
+                      {r.code?.index ?? ''}
+                    </td>
+                  )}
                   <td className="name-cell">
                     <span>{r.name}</span>
                     {p && <span className="badge pair">{p.side === 'left' ? 'L' : 'R'}</span>}
                     {r.looping && <span className="badge">loop</span>}
                   </td>
+                  {usage.size > 0 && (
+                    <td className={`usage-cell small${r.usage?.status === 'unused' ? ' muted' : ''}`} title={r.summary}>
+                      {r.summary}
+                    </td>
+                  )}
                   <td className="col-id mono muted">{hex8(r.id)}</td>
                   <td className="col-num">{r.editable ? fmtDuration(r.duration) : '—'}</td>
                   <td className="col-num muted">{r.editable ? fmtRate(r.sampleRate) : '—'}</td>

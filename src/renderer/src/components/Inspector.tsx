@@ -18,6 +18,8 @@ interface Props {
   playing: string | null
   /** Shown above the controls (e.g. what an assignment will also apply to). */
   context?: ReactNode
+  /** What the focused stream is for (from the sound map). */
+  usage?: ReactNode
   emptyHint?: ReactNode
   onPlay: (ref: StreamRef, which: 'original' | 'new') => void
   onAssign: (sourceId: string, refs: StreamRef[]) => void
@@ -196,6 +198,8 @@ export function Inspector(props: Props) {
         )}
         {props.context}
       </section>
+
+      {props.usage}
 
       <section
         className={`panel drop-zone${dragging ? ' dragging' : ''}`}

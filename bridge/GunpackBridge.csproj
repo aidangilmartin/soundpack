@@ -8,6 +8,8 @@
     <AssemblyName>gunpack-bridge</AssemblyName>
     <RootNamespace>GunpackBridge</RootNamespace>
     <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- System.Speech creates the voice's culture (e.g. en-US); allow that in invariant mode -->
+    <PredefinedCulturesOnly>false</PredefinedCulturesOnly>
     <AllowedReferenceRelatedFileExtensions>.none</AllowedReferenceRelatedFileExtensions>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
     <!-- CodeWalker.Core built by scripts/build-bridge.mjs from a pinned commit (see CODEWALKER_COMMIT there). -->
@@ -25,6 +27,8 @@
     <Reference Include="SharpDX.Mathematics">
       <HintPath>$(CodeWalkerRuntime)SharpDX.Mathematics.dll</HintPath>
     </Reference>
+    <!-- Windows voices for the in-game ID pack (speak command); a no-op stub elsewhere -->
+    <PackageReference Include="System.Speech" Version="8.0.0" />
     <!-- CodeWalker's list of known names, used to label streams -->
     <None Include="$(CodeWalkerRuntime)strings.txt" Link="strings.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
   </ItemGroup>

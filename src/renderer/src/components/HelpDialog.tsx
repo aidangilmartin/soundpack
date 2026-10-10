@@ -20,7 +20,19 @@ export function HelpDialog({ onClose }: Props) {
           </li>
           <li>
             <b>Pick a gun.</b> Its sounds are grouped the way the game uses them: the gunshot, the distant report, the echo/tail, suppressed
-            shots and shell casings. <b>Your gun</b> is what you hear; <b>Others hear</b> is what other players and NPCs hear.
+            shots and shell casings, then handling, melee and slow-motion sounds. <b>Your gun</b> is what you hear; <b>Others hear</b> is
+            what other players and NPCs hear.
+          </li>
+          <li>
+            <b>See what every sound is for.</b> Select any sound to see each way the game plays it, traced through the game's audio data:
+            which gun (or explosion, animation…) triggers it, which part it is, and when — close or distant, which random variation and how
+            often, left or right channel. The Sound banks tab lists every bank of both archives with a “Used for” column; filter it by what
+            you're after (e.g. “echo”) or show the unused sounds.
+          </li>
+          <li>
+            <b>Confirm it in game.</b> <b>Identify in game…</b> builds a test pack where every sound says its code, like “pistol 4”. Install
+            it, play, and type the codes you hear into “What did I hear?” — this also catches sounds the game code or scripts play by name,
+            which no data file explains. Remove the test pack afterwards.
           </li>
           <li>
             <b>Replace sounds.</b> Select a part (or “Select all”), add a WAV/MP3/OGG/FLAC and assign it — or drop the file straight onto a

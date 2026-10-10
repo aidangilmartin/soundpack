@@ -28,7 +28,9 @@ public static class RpfBuild
 
         var errors = new List<BuildError>();
         var replacements = new Dictionary<string, Dictionary<string, byte[]>>(StringComparer.OrdinalIgnoreCase);
-        foreach (var spec in o.All("bank"))
+        // --bank-list: one <pack>/<bank>=<file> per line, for exports too long for a command line
+        var specs = o.All("bank").Concat(o.All("bank-list").SelectMany(f => File.ReadAllLines(f)).Where(l => l.Trim().Length > 0)).ToList();
+        foreach (var spec in specs)
         {
             var eq = spec.IndexOf('=');
             if (eq < 0) throw new BridgeException("usage", $"--bank expects <pack>/<bank>=<file>, got '{spec}'.");

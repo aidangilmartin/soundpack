@@ -36,6 +36,7 @@ public static class Program
                 "extract" => Commands.Extract(opts),
                 "scan" => GameScan.Run(opts),
                 "build-rpf" => RpfBuild.Run(opts),
+                "speak" => Speech.Run(opts),
                 "make-test-game" => TestGame.Make(opts),
                 _ => throw new BridgeException("usage", $"Unknown command '{opts.Command}'.\n{Usage}")
             };
@@ -57,9 +58,12 @@ public static class Program
     const string Usage = """
         Usage: gunpack-bridge <command> [options]
           probe   --gta <GTA V folder>                      check the game folder and decryption keys
-          scan    --gta <GTA V folder> --out <dir>          index every gun's sounds and extract their banks
-          build-rpf --gta <GTA V folder> --out <dir> --bank <pack>/<bank>=<file.awc>...
+          scan    --gta <GTA V folder> --out <dir> [--names <file>]
+                                                            index every gun's sounds, map what every sound is for
+                                                            and extract the gun banks
+          build-rpf --gta <GTA V folder> --out <dir> --bank <pack>/<bank>=<file.awc>... [--bank-list <file>]
                                                             rebuild WEAPONS_PLAYER.rpf / RESIDENT.rpf (OPEN) with replaced banks
+          speak   --in <phrases.json> --out <dir>           speak each phrase to a WAV file (Windows voices)
           list    --gta <GTA V folder>                      list weapon sound banks
           extract --gta <GTA V folder> --out <dir> [--bank <pack>/<file>]...
                                                             extract banks as unencrypted .awc files
@@ -76,6 +80,15 @@ public static class Output
     static readonly JsonSerializerOptions Json = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
 
     public static string Serialize(object value) => JsonSerializer.Serialize(value, Json);
+
+    static readonly JsonSerializerOptions CompactJson = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
+    };
+
+    /// <summary>Like <see cref="Serialize"/> but leaves out null fields (for large files).</summary>
+    public static string SerializeCompact(object value) => JsonSerializer.Serialize(value, CompactJson);
 
     public static void Write(object value) => Console.Out.WriteLine(Serialize(value));
 

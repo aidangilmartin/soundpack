@@ -46,3 +46,28 @@ export function installReadme(name: string, archives: string[]): string {
     ''
   ].join('\n')
 }
+
+/** README.txt for the in-game ID pack: a test pack, not something to keep installed. */
+export function idPackReadme(archives: string[]): string {
+  return [
+    'Sound ID pack — find out which game sound plays when',
+    '',
+    'Files:',
+    ...archives.map((a) => `  ${a}`),
+    '  ID-LEGEND.txt   what every code means',
+    '',
+    'Every sound in the chosen banks is replaced by a short spoken code such as "pistol 4"',
+    '(or beeps when no Windows voice was available). Play the game, note the codes you hear,',
+    'and look them up in ID-LEGEND.txt or in the app ("What did I hear?").',
+    '',
+    'Install it like a normal pack:',
+    '  FiveM:  %localappdata%\\FiveM\\FiveM.app\\mods',
+    '  Single player (OpenIV):  <GTA V folder>\\mods\\x64\\audio\\sfx',
+    '',
+    'This is a test pack: delete the files again when you are done, and never put them over the',
+    'original files in <GTA V folder>\\x64\\audio\\sfx.',
+    '',
+    'Made with Gun Soundpack Maker.',
+    ''
+  ].join('\n')
+}

@@ -55,6 +55,19 @@ test('first launch: find GTA V, edit a gun, preview it and export', async () => 
   await expect(page.getByRole('heading', { name: 'Gunshot', exact: true })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Distant report' })).toBeVisible()
   await expect(page.getByText('400 rounds/min')).toBeVisible()
+  // every other sound field of the gun is listed too, folded by kind
+  await expect(page.locator('details.field-group summary', { hasText: 'Slow motion' })).toBeVisible()
+  await expect(page.locator('details.field-group summary', { hasText: 'Handling' })).toContainText('Reload sounds')
+
+  // what a sound is for, traced through the game data
+  const gunshotRows = page.locator('.role-group', { has: page.getByRole('heading', { name: 'Gunshot', exact: true }) }).locator('tbody tr')
+  await gunshotRows.first().click()
+  const usage = page.locator('.panel.usage')
+  await expect(usage.getByRole('heading', { name: "What it's for" })).toBeVisible()
+  await expect(usage.locator('.use').first()).toContainText('Your gun')
+  await expect(usage.locator('.use').first()).toContainText('Pistol · Gunshot')
+  await expect(usage).toContainText('ID pack code')
+  if (shots) await page.screenshot({ path: join(shots, '5-usage.png') })
 
   // in-game preview of the original gunshot
   await page.getByRole('button', { name: '▶ Original' }).click()
@@ -120,7 +133,7 @@ test('first launch: find GTA V, edit a gun, preview it and export', async () => 
   await app.close()
 })
 
-test('sound banks tab: browse a scanned bank and silence a stream', async () => {
+test('sound banks: every bank, what each sound is for, and the in-game ID pack', async () => {
   const work = mkdtempSync(join(tmpdir(), 'gsm-e2e-banks-'))
   const game = await makeFakeGame(work, { key: testAwcKey })
   const app = await electron.launch({
@@ -138,11 +151,45 @@ test('sound banks tab: browse a scanned bank and silence a stream', async () => 
   await expect(page.getByRole('navigation', { name: 'Guns' })).toBeVisible()
 
   await page.getByRole('tab', { name: 'Sound banks' }).click()
-  await page.locator('.bank-item[title="resident/weapons.awc"]').click()
+  await page.locator('.bank-item[title^="resident/weapons.awc"]').click()
   await expect(page.getByText('from your game')).toBeVisible()
   await expect(page.locator('table.streams tbody tr')).toHaveCount(3)
   await page.locator('table.streams tbody tr', { hasText: '02032920' }).click()
+  await expect(page.locator('table.streams tbody tr', { hasText: '02032920' })).toContainText('Your Pistol')
   await page.getByRole('button', { name: 'Silence' }).click()
   await expect(page.locator('table.streams tbody tr', { hasText: '02032920' })).toContainText('Silenced')
+
+  // a bank no gun uses is listed from the sound map and loads from the game on demand
+  const explosions = page.locator('.bank-item[title^="resident/explosions.awc"]')
+  await expect(explosions).toHaveClass(/missing/) // not in the library yet
+  await explosions.click()
+  await page.getByRole('button', { name: 'Load from game' }).click()
+  await expect(page.locator('table.streams tbody tr')).toHaveCount(3)
+  await expect(page.locator('table.streams tbody tr', { hasText: '0AA87351' })).toContainText('Unused')
+  await expect(page.locator('table.streams tbody tr', { hasText: '16EF0EA5' })).toContainText('Explosion')
+  if (shots) await page.screenshot({ path: join(shots, '6-banks.png') })
+
+  // the ID pack: every sound says its code
+  await page.getByRole('button', { name: 'Identify in game…' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Identify sounds in game' })
+  await dialog.getByRole('radio', { name: /Everything/ }).check()
+  await expect(dialog.getByText('3 banks, 9 sounds')).toBeVisible()
+  const outDir = join(work, 'ids')
+  await stubOpen(app, [outDir])
+  await dialog.getByRole('button', { name: 'Build ID pack…' }).click()
+  await expect(dialog.getByText(/Saved to/)).toBeVisible({ timeout: 30_000 })
+  await expect(dialog.getByText(/9 sounds labelled with beeps/)).toBeVisible()
+  if (shots) await page.screenshot({ path: join(shots, '7-idpack.png') })
+  const folder = join(outDir, 'sound-id-pack')
+  const legend = readFileSync(join(folder, 'ID-LEGEND.txt'), 'utf8')
+  expect(legend).toContain('explosions 3')
+  for (const f of ['WEAPONS_PLAYER.rpf', 'RESIDENT.rpf']) expect(existsSync(join(folder, f))).toBe(true)
+
+  // "What did I hear?" jumps to the sound
+  await dialog.getByRole('textbox', { name: 'ID pack code' }).fill('explosions three')
+  await dialog.getByRole('button', { name: 'Find' }).click()
+  await expect(dialog).toBeHidden()
+  await expect(page.locator('table.streams tbody tr.selected')).toContainText('16EF0EA5')
+  await expect(page.locator('.panel.usage')).toContainText('Explosion')
   await app.close()
 })

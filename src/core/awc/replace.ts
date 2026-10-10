@@ -1,4 +1,4 @@
-import { decodeAdpcm } from './adpcm'
+import { decodeAdpcm, encodeAdpcm } from './adpcm'
 import { computePeaks } from './peak'
 import { AwcChunk, AwcError, AwcFormat, AwcStream, ChunkTag, Codec, getDataChunk, getFormat } from './types'
 
@@ -30,6 +30,8 @@ export function decodeStreamPcm(stream: AwcStream): { pcm: Int16Array; sampleRat
 export interface ReplaceOptions {
   /** Millibels; undefined keeps the template's value. */
   headroom?: number
+  /** Output codec. PCM (default) is what FiveM packs ship; ADPCM is 4× smaller. */
+  codec?: 'pcm' | 'adpcm'
 }
 
 export const MAX_SAMPLE_RATE = 65535
@@ -37,7 +39,7 @@ export const MAX_SAMPLE_RATE = 65535
 /**
  * Returns a copy of `stream` whose audio is the given mono 16-bit PCM. The original's id,
  * loop/marker metadata and unknown chunks are kept; samples, rate, codec, data and peaks are
- * rebuilt. Output is always PCM (the codec real FiveM packs ship).
+ * rebuilt. Output is PCM (the codec real FiveM packs ship) unless `options.codec` says ADPCM.
  */
 export function replaceStreamAudio(stream: AwcStream, pcm: Int16Array, sampleRate: number, options: ReplaceOptions = {}): AwcStream {
   const oldFmt = getFormat(stream)
@@ -48,12 +50,14 @@ export function replaceStreamAudio(stream: AwcStream, pcm: Int16Array, sampleRat
   if (pcm.length === 0) pcm = new Int16Array(1)
 
   const samples = pcm.length
+  const adpcm = options.codec === 'adpcm'
+  const encoded = adpcm ? encodeAdpcm(pcm) : pcmToBytes(pcm)
   const inRange = (v: number): number => (v < samples ? v : 0)
   const format: AwcFormat = {
     ...oldFmt,
     samples,
     sampleRate,
-    codec: Codec.PCM,
+    codec: adpcm ? Codec.ADPCM : Codec.PCM,
     headroom: clampHeadroom(options.headroom ?? oldFmt.headroom),
     loopPoint: oldFmt.loopPoint >= samples ? -1 : oldFmt.loopPoint,
     loopBegin: inRange(oldFmt.loopBegin),
@@ -78,7 +82,7 @@ export function replaceStreamAudio(stream: AwcStream, pcm: Int16Array, sampleRat
         break
       case 'data':
         sawData = true
-        chunks.push({ ...c, bytes: pcmToBytes(pcm) })
+        chunks.push({ ...c, bytes: encoded })
         break
       case 'peak':
         if (peakValues && peakValues.length > 0) chunks.push({ ...c, values: peakValues })
@@ -90,7 +94,7 @@ export function replaceStreamAudio(stream: AwcStream, pcm: Int16Array, sampleRat
         chunks.push(c)
     }
   }
-  if (!sawData) chunks.push({ tag: ChunkTag.data, kind: 'data', bytes: pcmToBytes(pcm) })
+  if (!sawData) chunks.push({ tag: ChunkTag.data, kind: 'data', bytes: encoded })
   if (peakValues && peakValues.length > 0 && !chunks.some((c) => c.kind === 'peak')) {
     chunks.push({ tag: ChunkTag.peak, kind: 'peak', values: peakValues })
   }

@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Text;
 using System.Xml;
 using CodeWalker.GameFiles;
@@ -7,7 +8,8 @@ namespace GunpackBridge;
 /// <summary>
 /// One pass over the game that builds the weapon index: every gun from weapons.meta, its audio
 /// settings (player and NPC variants) and the full sound graph behind each part, plus the banks those
-/// sounds live in, which are extracted unencrypted for the template library.
+/// sounds live in, which are extracted unencrypted for the template library. It also writes the sound
+/// usage map (see <see cref="SoundUsage"/>): what every stream in WEAPONS_PLAYER and RESIDENT is for.
 /// </summary>
 public static class GameScan
 {
@@ -21,7 +23,26 @@ public static class GameScan
     static readonly string[] CategoryNames =
         ["player", "npc", "default", "ped", "mp", "multiplayer", "sp", "singleplayer", "fps", "player_fps", "cop", "army", "ai", "driveby"];
 
-    public sealed record ScanResult(Commands.GameInfo Game, string IndexPath, List<Commands.ExtractedBank> Extracted, List<Commands.BankError> Errors, int Weapons, List<string> Warnings);
+    /// <summary>WeaponSettings fields that keep the short role keys the app has always used.</summary>
+    static readonly Dictionary<string, string> ShortRoles = new()
+    {
+        ["FireSound"] = "fire",
+        ["AutoSound"] = "auto",
+        ["SuppressedFireSound"] = "suppressed",
+        ["ReportSound"] = "report",
+        ["EchoSound"] = "echo",
+        ["SuppressedEchoSound"] = "suppressedEcho",
+        ["ShellCasingSound"] = "shellCasing",
+        ["InteriorShotSound"] = "interior"
+    };
+
+    static readonly PropertyInfo[] WeaponSoundFields = typeof(Dat151WeaponSettings)
+        .GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+        .Where(p => p.PropertyType == typeof(MetaHash))
+        .ToArray();
+
+    public sealed record ScanResult(Commands.GameInfo Game, string IndexPath, string MapPath, List<Commands.ExtractedBank> Extracted,
+        List<Commands.BankError> Errors, int Weapons, List<string> Warnings);
 
     sealed record Container(string Pack, string Bank, RpfFile Rpf, RpfFileEntry Entry);
     sealed record WeaponInfo(string Name, string Group, string Audio, string HumanName, float TimeBetweenShots, string FireType);
@@ -31,7 +52,7 @@ public static class GameScan
         var root = Path.GetFullPath(o.Require("gta"));
         var outDir = Path.GetFullPath(o.Require("out"));
         var info = Commands.OpenGameInfo(o, root);
-        Commands.EnsureNames();
+        Commands.EnsureNames(o.Get("names"));
         var warnings = new List<string>();
 
         var archives = OpenArchives(root);
@@ -53,9 +74,10 @@ public static class GameScan
         }
 
         Output.Progress("Reading weapon definitions");
-        var weapons = ReadWeapons(all, warnings);
+        var allWeapons = ReadWeapons(all, warnings);
+        var weapons = allWeapons.Values.Where(w => GunGroups.Contains(w.Group)).ToDictionary(w => w.Name, StringComparer.OrdinalIgnoreCase);
         Output.Progress("Reading weapon names");
-        var text = ReadText(all, weapons.Values.Select(w => w.HumanName).Where(n => n.Length > 0).ToHashSet());
+        var text = ReadText(all, allWeapons.Values.Select(w => w.HumanName).Where(n => n.Length > 0).ToHashSet());
 
         Output.Progress("Reading audio metadata");
         var (game, sounds) = ReadRel(all, warnings);
@@ -78,17 +100,7 @@ public static class GameScan
             {
                 if (settingsHash == 0 || !seen.Add(settingsHash)) return;
                 if (!game.TryGetValue(settingsHash, out var sd) || sd is not Dat151WeaponSettings ws) return;
-                var roles = new Dictionary<string, uint>
-                {
-                    ["fire"] = ws.FireSound,
-                    ["auto"] = ws.AutoSound,
-                    ["suppressed"] = ws.SuppressedFireSound,
-                    ["report"] = ws.ReportSound,
-                    ["echo"] = ws.EchoSound,
-                    ["suppressedEcho"] = ws.SuppressedEchoSound,
-                    ["shellCasing"] = ws.ShellCasingSound,
-                    ["interior"] = ws.InteriorShotSound
-                }.Where(kv => kv.Value != 0).ToDictionary(kv => kv.Key, kv => kv.Value);
+                var roles = RolesOf(ws, sounds);
                 foreach (var h in roles.Values) Walk(h, sounds, nodes, containers, usedContainers, missingContainers);
                 variants.Add(new
                 {
@@ -137,7 +149,7 @@ public static class GameScan
 
         var index = new
         {
-            version = 1,
+            version = 2,
             game = info,
             weapons = weaponList,
             nodes,
@@ -147,7 +159,56 @@ public static class GameScan
         Directory.CreateDirectory(outDir);
         var indexPath = Path.Combine(outDir, "weapon-index.json");
         File.WriteAllText(indexPath, Output.Serialize(index));
-        return new ScanResult(info, indexPath, extracted, errors, weaponList.Count, warnings);
+
+        var weaponsByAudio = new Dictionary<uint, List<(string, string?)>>();
+        foreach (var w in allWeapons.Values)
+        {
+            var h = Hash(w.Audio);
+            if (!weaponsByAudio.TryGetValue(h, out var list)) weaponsByAudio[h] = list = [];
+            list.Add((w.Name, text.TryGetValue(w.HumanName, out var dn) ? dn : null));
+        }
+        var mapBanks = SoundUsage.MapPacks.SelectMany(pack => BanksOf(all, pack)).ToList();
+        var mapWarnings = new List<string>();
+        var mapPath = SoundUsage.Write(new SoundUsage.Context
+        {
+            Sounds = sounds,
+            Game = game,
+            Banks = mapBanks,
+            Archives = all,
+            WeaponsByAudio = weaponsByAudio,
+            CategoryName = CategoryName
+        }, outDir, mapWarnings);
+        warnings.AddRange(mapWarnings);
+        return new ScanResult(info, indexPath, mapPath, extracted, errors, weaponList.Count, warnings);
+    }
+
+    /// <summary>
+    /// The banks of a wave pack, from the same archive the export rebuilds: the copy in update.rpf
+    /// when there is one, otherwise x64\audio\sfx\&lt;PACK&gt;.rpf.
+    /// </summary>
+    static IEnumerable<SoundUsage.BankRef> BanksOf(List<RpfFile> all, string pack)
+    {
+        var suffix = @"x64\audio\sfx\" + Commands.ArchiveName(pack).ToLowerInvariant();
+        var candidates = all.Where(r => r.AllEntries != null && r.Path.Replace('/', '\\').EndsWith(suffix, StringComparison.OrdinalIgnoreCase)).ToList();
+        var rpf = candidates.FirstOrDefault(r => r.Path.StartsWith("update", StringComparison.OrdinalIgnoreCase))
+            ?? candidates.FirstOrDefault(r => r.Path.StartsWith("x64", StringComparison.OrdinalIgnoreCase));
+        if (rpf == null) yield break;
+        foreach (var entry in rpf.AllEntries!.OfType<RpfFileEntry>().Where(e => e.NameLower.EndsWith(".awc")))
+            yield return new SoundUsage.BankRef(pack, entry.NameLower, rpf, entry);
+    }
+
+    /// <summary>Every sound field a weapon setting fills in: the 8 shot parts plus handling, slow motion, melee…</summary>
+    static Dictionary<string, uint> RolesOf(Dat151WeaponSettings ws, Dictionary<uint, RelData> sounds)
+    {
+        var roles = new Dictionary<string, uint>();
+        foreach (var p in WeaponSoundFields)
+        {
+            var h = ((MetaHash)p.GetValue(ws)!).Hash;
+            if (h == 0) continue;
+            if (ShortRoles.TryGetValue(p.Name, out var key)) roles[key] = h;
+            else if (sounds.ContainsKey(h)) roles[char.ToLowerInvariant(p.Name[0]) + p.Name[1..]] = h;
+        }
+        return roles;
     }
 
     static uint Hash(string s) => JenkHash.GenHash(s.ToLowerInvariant());
@@ -169,7 +230,8 @@ public static class GameScan
             var lower = rel.ToLowerInvariant();
             if (lower.StartsWith(@"mods\")) continue;
             int order;
-            if (lower == "common.rpf" || lower == "x64b.rpf" || lower.StartsWith(@"x64\audio\")) order = 0;
+            // x64?.rpf hold the animations whose tags trigger some weapon sounds (reloads, handling)
+            if (lower == "common.rpf" || IsX64Archive(lower) || lower.StartsWith(@"x64\audio\")) order = 0;
             else if (lower == @"update\update.rpf") order = 1;
             else if (lower.Contains(@"dlcpacks\") && lower.EndsWith(@"\dlc.rpf")) order = 2;
             else continue;
@@ -189,6 +251,8 @@ public static class GameScan
         }
         return result;
     }
+
+    static bool IsX64Archive(string lower) => lower.Length == 8 && lower.StartsWith("x64") && char.IsLetter(lower[3]) && lower.EndsWith(".rpf");
 
     static Dictionary<string, WeaponInfo> ReadWeapons(List<RpfFile> archives, List<string> warnings)
     {
@@ -213,7 +277,7 @@ public static class GameScan
                         var name = node["Name"]?.InnerText.Trim() ?? "";
                         var group = node["Group"]?.InnerText.Trim() ?? "";
                         var audio = node["Audio"]?.InnerText.Trim() ?? "";
-                        if (name.Length == 0 || !GunGroups.Contains(group) || audio.Length == 0) continue;
+                        if (name.Length == 0 || audio.Length == 0) continue;
                         float.TryParse(node["TimeBetweenShots"]?.Attributes?["value"]?.Value, System.Globalization.NumberStyles.Float,
                             System.Globalization.CultureInfo.InvariantCulture, out var tbs);
                         weapons[name] = new WeaponInfo(name, group, audio, node["HumanNameHash"]?.InnerText.Trim() ?? "", tbs,
@@ -324,59 +388,15 @@ public static class GameScan
                 nodes[h] = new { type = "Missing" };
                 continue;
             }
-            var children = (s.ChildSoundsHashes ?? []).Select(c => (uint)c).Where(c => c != 0).ToArray();
-            object? simple = null;
             if (s is Dat54SimpleSound ss)
             {
                 uint c = ss.ContainerName;
                 if (containers.ContainsKey(c)) usedContainers.Add(c);
                 else missingContainers.Add(c);
-                simple = new { container = c, file = (uint)ss.FileName & 0x1FFFFFFF };
             }
-            object? envelope = s is Dat54EnvelopeSound e
-                ? new { attack = (int)e.Attack, decay = (int)e.Decay, sustain = (int)e.Sustain, hold = e.Hold, release = e.Release }
-                : null;
-            if (s is Dat54EnvelopeSound env && env.ChildSound != 0 && !children.Contains((uint)env.ChildSound))
-                children = [.. children, (uint)env.ChildSound];
-            nodes[h] = new
-            {
-                type = s.Type.ToString(),
-                header = Header(s.Header),
-                children,
-                weights = s is Dat54RandomizedSound r ? r.VariationsValues : null,
-                envelope,
-                simple
-            };
+            nodes[h] = SoundUsage.Node(s);
+            var children = SoundUsage.ChildrenOf(s).Where(c => c != 0);
             foreach (var c in children) queue.Enqueue(c);
         }
-    }
-
-    /// <summary>Only the header fields the game data actually sets (absent fields use engine defaults).</summary>
-    static Dictionary<string, int> Header(RelSoundHeader? h)
-    {
-        var d = new Dictionary<string, int>();
-        if (h == null) return d;
-        uint f = h.Flags;
-        bool Has(int bit) => ((f >> (bit / 8 * 8)) & 0xFF) != 0xAA && ((f >> bit) & 1) != 0;
-        if (Has(2)) d["volume"] = h.Volume;
-        if (Has(3)) d["volumeVariance"] = h.VolumeVariance;
-        if (Has(4)) d["pitch"] = h.Pitch;
-        if (Has(5)) d["pitchVariance"] = h.PitchVariance;
-        if (Has(6)) d["pan"] = h.Pan;
-        if (Has(7)) d["panVariance"] = h.PanVariance;
-        if (Has(8)) d["preDelay"] = h.PreDelay;
-        if (Has(9)) d["preDelayVariance"] = h.PreDelayVariance;
-        if (Has(10)) d["startOffset"] = h.StartOffset;
-        if (Has(11)) d["startOffsetVariance"] = h.StartOffsetVariance;
-        if (Has(12)) d["attack"] = h.AttackTime;
-        if (Has(13)) d["release"] = h.ReleaseTime;
-        if (Has(16)) d["lpf"] = h.LPFCutoff;
-        if (Has(17)) d["lpfVariance"] = h.LPFCutoffVariance;
-        if (Has(18)) d["hpf"] = h.HPFCutoff;
-        if (Has(19)) d["hpfVariance"] = h.HPFCutoffVariance;
-        if (Has(27)) d["smallReverb"] = h.SmallReverbSend;
-        if (Has(28)) d["mediumReverb"] = h.MediumReverbSend;
-        if (Has(29)) d["largeReverb"] = h.LargeReverbSend;
-        return d;
     }
 }

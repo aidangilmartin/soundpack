@@ -22,6 +22,10 @@
    <ReportVolumeDelta value="-3" />
    <ReportPredelayDelta value="20" />
    <TailEnergyValue value="1" />
+   <EchoSound>pistol_echo</EchoSound>
+   <HeftSound>pistol_heft</HeftSound>
+   <ReloadSounds>pistol_reload_set</ReloadSounds>
+   <SlowMoFireSound>pistol_slowmo</SlowMoFireSound>
   </Item>
   <Item type="WeaponSettings" ntOffset="0">
    <Name>pistol_npc</Name>
@@ -38,6 +42,21 @@
    <Flags value="0" />
    <Version value="0" />
    <FireSound>smg_player_fire</FireSound>
+  </Item>
+  <Item type="ExplosionAudioSettings" ntOffset="0">
+   <Name>explosion_grenade</Name>
+   <Flags value="0" />
+   <ExplosionSound>explosion_boom</ExplosionSound>
+   <DebrisSound />
+   <DeafeningVolume value="0" />
+   <DebrisTimeScale value="0" />
+   <DebrisVolume value="0" />
+   <ShockwaveIntensity value="0" />
+   <ShockwaveDelay value="0" />
+   <SlowMoExplosionSound />
+   <SlowMoExplosionPreSuckSound />
+   <SlowMoExplosionPreSuckSoundTime value="0" />
+   <SlowMoExplosionPreSuckMixerScene value="0" />
   </Item>
  </Items>
 </Dat151>

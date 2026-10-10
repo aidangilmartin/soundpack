@@ -5,6 +5,7 @@ import { BankCategory, CATALOG, lookupBank } from '@core/catalog'
 import { hex8 } from '@core/hash'
 import { detectPairs, StreamPair } from '@core/pairs'
 import { Assignment, bankKey, Project, ProjectBank, SourceInfo, type StreamRef } from '@core/project'
+import type { BankSummary } from '@core/usage'
 import type { AudioData } from '@core/wav'
 import type { LibraryTemplate, TemplateData } from '@shared/ipc'
 
@@ -24,9 +25,13 @@ export interface SourceEntry {
   audio: AudioData
 }
 
-export function loadTemplate(pack: string, file: string, data: TemplateData): LoadedTemplate {
+/** `knownPairs`: L/R pairs the game data defines (sound map); name-based detection fills in the rest. */
+export function loadTemplate(pack: string, file: string, data: TemplateData, knownPairs: StreamPair[] = []): LoadedTemplate {
   const awc = parseAwc(data.bytes)
   const ids = awc.streams.map((s) => s.id)
+  const present = new Set(ids)
+  const known = knownPairs.filter((p) => present.has(p.left) && present.has(p.right))
+  const taken = new Set(known.flatMap((p) => [p.left, p.right]))
   return {
     pack,
     file,
@@ -34,7 +39,7 @@ export function loadTemplate(pack: string, file: string, data: TemplateData): Lo
     names: data.names,
     summaries: awc.streams.map(summarizeStream),
     byId: new Map(awc.streams.map((s) => [s.id, s])),
-    detectedPairs: detectPairs(ids, data.names, file)
+    detectedPairs: [...known, ...detectPairs(ids, data.names, file).filter((p) => !taken.has(p.left) && !taken.has(p.right))]
   }
 }
 
@@ -64,19 +69,42 @@ export interface BankItem {
   note?: string
   template?: LibraryTemplate
   changed: number
+  /** Sidebar group when the sound map is known: the archive the bank lives in. */
+  group?: string
+  /** What the bank holds, from the sound map. */
+  summary?: BankSummary
 }
 
-/** Catalog banks plus any other imported banks, with import and change status. */
-export function bankItems(library: LibraryTemplate[], project: Project): BankItem[] {
+/**
+ * Every bank of WEAPONS_PLAYER.rpf and RESIDENT.rpf when the sound map is known (labelled with what
+ * the game uses them for), otherwise the catalog of usual gun banks; plus any other imported banks.
+ */
+export function bankItems(library: LibraryTemplate[], project: Project, summaries?: Map<string, BankSummary> | null): BankItem[] {
   const changed = (pack: string, file: string): number =>
     project.banks.find((b) => bankKey(b.pack, b.file) === bankKey(pack, file))?.assignments.length ?? 0
   const lib = new Map(library.map((t) => [bankKey(t.pack, t.file), t]))
-  const items: BankItem[] = CATALOG.map((b) => ({
-    key: bankKey(b.pack, b.file),
-    ...b,
-    template: lib.get(bankKey(b.pack, b.file)),
-    changed: changed(b.pack, b.file)
-  }))
+  const items: BankItem[] = summaries
+    ? [...summaries.entries()].map(([key, summary]) => {
+        const [pack, file] = key.split('/')
+        return {
+          key,
+          pack,
+          file,
+          label: file.replace(/\.awc$/, ''),
+          category: 'other' as const,
+          certainty: 'name' as const,
+          group: summary.archive,
+          summary,
+          template: lib.get(key),
+          changed: changed(pack, file)
+        }
+      })
+    : CATALOG.map((b) => ({
+        key: bankKey(b.pack, b.file),
+        ...b,
+        template: lib.get(bankKey(b.pack, b.file)),
+        changed: changed(b.pack, b.file)
+      }))
   const known = new Set(items.map((i) => i.key))
   for (const t of library) {
     const key = bankKey(t.pack, t.file)
@@ -89,6 +117,7 @@ export function bankItems(library: LibraryTemplate[], project: Project): BankIte
       label: info?.label ?? t.file.replace(/\.awc$/, ''),
       category: 'other',
       certainty: 'guess',
+      group: summaries ? 'Imported' : undefined,
       note: `Custom wave pack "${t.pack}". Make sure the folder name matches the game's wave pack.`,
       template: t,
       changed: changed(t.pack, t.file)

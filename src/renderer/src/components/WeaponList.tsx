@@ -8,9 +8,11 @@ interface Props {
   onSelect: (name: string) => void
   onRescan: () => void
   stale: boolean
+  /** Scanned by an older version: no sound usage map yet. */
+  outdated?: boolean
 }
 
-export function WeaponList({ weapons, selected, changed, onSelect, onRescan, stale }: Props) {
+export function WeaponList({ weapons, selected, changed, onSelect, onRescan, stale, outdated }: Props) {
   const [query, setQuery] = useState('')
   const groups = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -31,9 +33,9 @@ export function WeaponList({ weapons, selected, changed, onSelect, onRescan, sta
           onChange={(e) => setQuery(e.target.value)}
           aria-label="Search guns"
         />
-        {stale && (
+        {(stale || outdated) && (
           <p className="note small">
-            GTA V was updated since the last scan.{' '}
+            {stale ? 'GTA V was updated since the last scan.' : 'Scan again to see what every sound is for.'}{' '}
             <button className="btn subtle small" onClick={onRescan}>
               Scan again
             </button>

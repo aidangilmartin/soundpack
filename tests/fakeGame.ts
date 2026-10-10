@@ -18,14 +18,17 @@ export function fixtureBank(): Uint8Array {
 }
 
 /**
- * Builds a fake GTA V folder: OPEN (unencrypted) archives holding AWC-encrypted banks, audio
- * metadata (tests/fixtures/game/*.rel.xml) and weapons.meta. Returns the game folder.
+ * Builds a fake GTA V folder: OPEN (unencrypted) archives holding AWC-encrypted banks
+ * (weapons_player/ptl_pistol, resident/weapons, resident/explosions), audio metadata
+ * (tests/fixtures/game/*.rel.xml), weapons.meta and a weapon clip dictionary. Returns the game folder.
  */
 export async function makeFakeGame(dir: string, opts: { key?: string; wholeFile?: boolean; metadata?: boolean } = {}): Promise<string> {
   const bank = join(dir, 'ptl_pistol.awc')
   const shared = join(dir, 'weapons.awc')
+  const explosions = join(dir, 'explosions.awc')
   writeFileSync(bank, fixtureBank())
   writeFileSync(shared, fixtureBank())
+  writeFileSync(explosions, fixtureBank())
   const game = join(dir, 'Grand Theft Auto V')
   const metadata =
     opts.metadata === false
@@ -36,7 +39,9 @@ export async function makeFakeGame(dir: string, opts: { key?: string; wholeFile?
           '--rel',
           join(fixtures, 'game.dat151.rel.xml'),
           '--weapons-meta',
-          join(fixtures, 'weapons.meta')
+          join(fixtures, 'weapons.meta'),
+          '--ycd-xml',
+          join(fixtures, 'weapons@pistol.ycd.xml')
         ]
   await runBridge(bridgeExe, [
     'make-test-game',
@@ -48,6 +53,8 @@ export async function makeFakeGame(dir: string, opts: { key?: string; wholeFile?
     bank,
     '--resident-awc',
     shared,
+    '--resident-awc',
+    explosions,
     ...metadata
   ])
   return game

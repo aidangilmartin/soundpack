@@ -21,16 +21,21 @@ import {
   type Project,
   type StreamRef
 } from '@core/project'
+import { codeOf, idCodes, type IdCode } from '@core/idpack'
+import { bankSummary, stereoPairs, streamSummary, streamUsage, type BankSummary, type SoundMap, type StreamUsage } from '@core/usage'
 import { expandToAudiences, weaponParts } from '@core/weapons'
 import type { AudioData } from '@core/wav'
 import type { ExportArchivesResult, ImportReport, LibraryTemplate, PickedFile, ScanReport, StoredWeaponIndex } from '@shared/ipc'
 import { decodeAudio, player } from './audio'
 import { BankView } from './components/BankView'
+import { CodeLookup } from './components/CodeLookup'
 import { ExportDialog } from './components/ExportDialog'
 import { HelpDialog } from './components/HelpDialog'
+import { IdPackDialog } from './components/IdPackDialog'
 import { Inspector } from './components/Inspector'
 import { Setup } from './components/Setup'
 import { Sidebar } from './components/Sidebar'
+import { UsagePanel } from './components/UsagePanel'
 import { WeaponList } from './components/WeaponList'
 import { WeaponView } from './components/WeaponView'
 import {
@@ -69,8 +74,12 @@ export function App() {
   const [labels, setLabels] = useState<Record<string, string>>({})
   const [playing, setPlaying] = useState<string | null>(null)
   const [toast, setToast] = useState<Toast | null>(null)
-  const [dialog, setDialog] = useState<'export' | 'help' | 'rescan' | null>(null)
+  const [dialog, setDialog] = useState<'export' | 'help' | 'rescan' | 'idpack' | null>(null)
+  const [soundMap, setSoundMap] = useState<SoundMap | null>(null)
+  const [loadingBanks, setLoadingBanks] = useState<Set<string>>(new Set())
   const toastTimer = useRef<number | undefined>(undefined)
+  const mapRef = useRef<SoundMap | null>(null)
+  mapRef.current = soundMap
   const loading = useRef(new Set<string>())
 
   const notify = useCallback((kind: Toast['kind'], text: string) => {
@@ -91,18 +100,42 @@ export function App() {
 
   useEffect(() => player.subscribe(setPlaying), [])
   useEffect(() => {
-    void Promise.all([window.api.listTemplates(), window.api.getLabels(), window.api.getWeaponIndex()]).then(([lib, lab, idx]) => {
-      setLibrary(lib)
-      setLabels(lab)
-      setWeaponIndex(idx)
-      if (idx?.index.weapons.length) setWeaponName(idx.index.weapons[0].name)
-      setReady(true)
-    })
+    void Promise.all([window.api.listTemplates(), window.api.getLabels(), window.api.getWeaponIndex(), window.api.getSoundMap()]).then(
+      ([lib, lab, idx, map]) => {
+        setLibrary(lib)
+        setLabels(lab)
+        setWeaponIndex(idx)
+        setSoundMap(map)
+        if (idx?.index.weapons.length) setWeaponName(idx.index.weapons[0].name)
+        setReady(true)
+      }
+    )
   }, [])
 
   const index = weaponIndex?.index ?? null
   const weapon = index?.weapons.find((w) => w.name === weaponName) ?? null
-  const items = useMemo(() => bankItems(library, project), [library, project])
+  // what every bank holds and every stream is for, from the sound map
+  const summaries = useMemo(() => {
+    if (!soundMap) return null
+    const keys = Object.keys(soundMap.banks).sort(
+      (a, b) => soundMap.banks[b].archive.localeCompare(soundMap.banks[a].archive) || a.localeCompare(b)
+    )
+    return new Map<string, BankSummary>(keys.map((k) => [k, bankSummary(soundMap, k)]))
+  }, [soundMap])
+  const codes = useMemo(() => (soundMap ? idCodes(soundMap) : null), [soundMap])
+  const usageCache = useMemo(() => new Map<string, StreamUsage>(), [soundMap])
+  const usageOf = useCallback(
+    (pack: string, file: string, id: number): StreamUsage | null => {
+      if (!soundMap) return null
+      const key = `${bankKey(pack, file)}:${id}`
+      let u = usageCache.get(key)
+      if (!u) usageCache.set(key, (u = streamUsage(soundMap, pack, file, id)))
+      return u
+    },
+    [soundMap, usageCache]
+  )
+  const weaponNames = useMemo(() => new Set(index?.weapons.map((w) => w.name) ?? []), [index])
+  const items = useMemo(() => bankItems(library, project, summaries), [library, project, summaries])
   const activeItem = items.find((i) => i.key === activeKey) ?? null
   const activeTemplate = activeKey ? (loaded.get(activeKey) ?? null) : null
   const activeBank = activeItem ? findBank(project, activeItem.pack, activeItem.file) : undefined
@@ -110,7 +143,7 @@ export function App() {
   /** Loads a template from the library once; concurrent requests share the work. */
   const ensureLoaded = useCallback(async (pack: string, file: string): Promise<LoadedTemplate> => {
     const key = bankKey(pack, file)
-    const t = loadTemplate(pack, file, await window.api.readTemplate(pack, file))
+    const t = loadTemplate(pack, file, await window.api.readTemplate(pack, file), mapRef.current ? stereoPairs(mapRef.current, key) : [])
     setLoaded((m) => (m.has(key) ? m : new Map(m).set(key, t)))
     return t
   }, [])
@@ -184,8 +217,9 @@ export function App() {
   const onScanned = async (report: ScanReport): Promise<void> => {
     forget(report.banks.imported.map((t) => bankKey(t.pack, t.file)))
     await refreshLibrary()
-    const idx = await window.api.getWeaponIndex()
+    const [idx, map] = await Promise.all([window.api.getWeaponIndex(), window.api.getSoundMap()])
     setWeaponIndex(idx)
+    setSoundMap(map)
     if (idx && !idx.index.weapons.some((w) => w.name === weaponName)) setWeaponName(idx.index.weapons[0]?.name ?? null)
     setTab('weapons')
     setDialog(null)
@@ -195,6 +229,46 @@ export function App() {
       failed ? 'error' : 'info',
       `Found ${report.weapons} guns and ${report.banks.imported.length} sound banks.${failed ? ` ${failed} banks failed: ${report.banks.errors.map((e) => e.name).join(', ')}` : ''}`
     )
+  }
+
+  /** Extracts a bank the sound map lists from the game into the library. */
+  const loadFromGame = async (key: string): Promise<void> => {
+    if (loadingBanks.has(key)) return
+    setLoadingBanks((s) => new Set(s).add(key))
+    try {
+      const report = await window.api.loadGameBanks([key])
+      if (report.imported.length) {
+        forget(report.imported.map((t) => bankKey(t.pack, t.file)))
+        await refreshLibrary()
+      }
+      if (report.errors.length) notify('error', report.errors.map((e) => `${e.name}: ${e.message}`).join('\n'))
+    } catch (e) {
+      notify('error', cleanError(e))
+    } finally {
+      setLoadingBanks((s) => {
+        const next = new Set(s)
+        next.delete(key)
+        return next
+      })
+    }
+  }
+
+  /** Jumps to the stream behind an ID-pack code, loading its bank from the game if needed. */
+  const findCode = (code: IdCode): void => {
+    const [pack, file] = code.bank.split('/')
+    const ref = { pack, file, streamId: code.id }
+    setDialog(null)
+    setTab('banks')
+    setActiveKey(code.bank)
+    select([ref], ref)
+    if (!library.some((t) => bankKey(t.pack, t.file) === code.bank)) void loadFromGame(code.bank)
+    window.setTimeout(() => document.getElementById(`row-${code.id}`)?.scrollIntoView({ block: 'center' }), 300)
+  }
+
+  const openWeapon = (name: string): void => {
+    setTab('weapons')
+    setWeaponName(name)
+    select([], null)
   }
 
   const importAwc = async (paths?: string[]): Promise<void> => handleReport(await window.api.importAwcFiles(paths))
@@ -446,6 +520,8 @@ export function App() {
   }
 
   const bankSelection = activeItem ? selection.filter((r) => bankKey(r.pack, r.file) === activeItem.key) : []
+  const usageRef = focus ?? selection[0] ?? null
+  const focusUsage = usageRef ? usageOf(usageRef.pack, usageRef.file, usageRef.streamId) : null
   const inspector = (
     <Inspector
       templates={loaded}
@@ -461,6 +537,19 @@ export function App() {
             Also changes {targetsFor(selection).length - selection.length} matching{' '}
             {targetsFor(selection).length - selection.length === 1 ? 'sound' : 'sounds'} that others hear.
           </p>
+        ) : undefined
+      }
+      usage={
+        soundMap && focusUsage && usageRef ? (
+          <UsagePanel
+            key={refKey(usageRef)}
+            map={soundMap}
+            usage={focusUsage}
+            code={codes ? codeOf(codes, bankKey(usageRef.pack, usageRef.file), usageRef.streamId) : undefined}
+            weaponNames={weaponNames}
+            currentWeapon={tab === 'weapons' ? weaponName : null}
+            onOpenWeapon={openWeapon}
+          />
         ) : undefined
       }
       emptyHint={
@@ -538,6 +627,14 @@ export function App() {
           <button className="btn subtle" onClick={() => setDialog('help')}>
             Help
           </button>
+          <button
+            className="btn subtle"
+            onClick={() => setDialog('idpack')}
+            disabled={!soundMap}
+            title={soundMap ? 'Build a test pack where every sound says its code' : 'Scan the game again to map every sound first'}
+          >
+            Identify in game…
+          </button>
           <button className="btn primary" onClick={() => setDialog('export')} disabled={changedCount === 0}>
             Export{changedCount ? ` (${changedCount})` : ''}
           </button>
@@ -551,6 +648,7 @@ export function App() {
             selected={weaponName}
             changed={changedByWeapon}
             stale={!!weaponIndex?.stale}
+            outdated={!!weaponIndex?.outdated}
             onSelect={(name) => {
               setWeaponName(name)
               select([], null)
@@ -575,6 +673,10 @@ export function App() {
               onPlayPart={play}
               onDropFiles={(files, refs) => void dropFilesOnStreams(files, refs)}
               onError={(m) => notify('error', m)}
+              usageSummary={(r) => {
+                const u = usageOf(r.pack, r.file, r.streamId)
+                return u ? streamSummary(u) : ''
+              }}
             />
           ) : (
             <section className="bank-view empty-state muted">Pick a gun on the left.</section>
@@ -586,6 +688,7 @@ export function App() {
           <Sidebar
             items={items}
             activeKey={activeKey}
+            top={codes ? <CodeLookup codes={codes} onFound={findCode} compact /> : undefined}
             onSelect={selectBank}
             onExtractFromGame={() => setDialog('rescan')}
             onImportAwc={() => void importAwc()}
@@ -620,6 +723,10 @@ export function App() {
               onImportCodeWalker={() => void importCodeWalker()}
               onRemoveTemplate={() => void removeTemplate()}
               onChangePack={(pack) => void changePack(pack)}
+              usageOf={soundMap ? (id) => usageOf(activeItem.pack, activeItem.file, id) : undefined}
+              codeOf={codes ? (id) => codeOf(codes, activeItem.key, id) : undefined}
+              onLoadFromGame={summaries?.has(activeItem.key) ? () => void loadFromGame(activeItem.key) : undefined}
+              loadingFromGame={loadingBanks.has(activeItem.key)}
             />
           ) : (
             <section className="bank-view empty-state">
@@ -650,6 +757,17 @@ export function App() {
         />
       )}
       {dialog === 'help' && <HelpDialog onClose={() => setDialog(null)} />}
+      {dialog === 'idpack' && soundMap && codes && summaries && (
+        <IdPackDialog
+          map={soundMap}
+          codes={codes}
+          index={index}
+          weapon={weapon}
+          summaries={summaries}
+          onFound={findCode}
+          onClose={() => setDialog(null)}
+        />
+      )}
       {dialog === 'rescan' && <Setup mode="rescan" onDone={(r) => void onScanned(r)} onClose={() => setDialog(null)} />}
     </div>
   )

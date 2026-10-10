@@ -51,7 +51,11 @@ describe.skipIf(!existsSync(exe))('CodeWalker bridge (integration)', () => {
       const args = ['--gta', game, '--no-keys', '--test-awc-key', key]
 
       const list = await runBridge<ListResult>(exe, ['list', ...args])
-      expect(list.banks.map((b) => `${b.pack}/${b.file}`).sort()).toEqual(['resident/weapons.awc', 'weapons_player/ptl_pistol.awc'])
+      expect(list.banks.map((b) => `${b.pack}/${b.file}`).sort()).toEqual([
+        'resident/explosions.awc',
+        'resident/weapons.awc',
+        'weapons_player/ptl_pistol.awc'
+      ])
       expect(list.game.exe).toBe('gta5.exe')
 
       const out = tmp()
