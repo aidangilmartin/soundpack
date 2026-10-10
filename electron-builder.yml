@@ -1,0 +1,25 @@
+appId: com.soundpack.gunsoundpackmaker
+productName: Gun Soundpack Maker
+directories:
+  output: release
+  buildResources: build
+files:
+  - out/**/*
+  - package.json
+asar: true
+win:
+  target:
+    - nsis
+    - portable
+  artifactName: ${productName}-${version}-${arch}-${target}.${ext}
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+linux:
+  target:
+    - AppImage
+  category: Audio
+mac:
+  target:
+    - dmg
+  category: public.app-category.music
