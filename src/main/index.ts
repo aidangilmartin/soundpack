@@ -41,7 +41,7 @@ const mapPath = (): string => join(app.getPath('userData'), 'sound-map.json')
 const namesPath = (): string => join(app.getPath('userData'), 'names.txt')
 
 /** The weapon index version that comes with a sound usage map. */
-const INDEX_VERSION = 2
+const INDEX_VERSION = 3
 
 /** Asks before replacing files of ours in an existing export folder, then removes them. */
 async function clearExportFolder(folder: string, files: string[]): Promise<boolean> {

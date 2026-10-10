@@ -15,6 +15,7 @@
         <Item type="CWeaponInfo">
           <Name>WEAPON_SMG</Name>
           <Group>GROUP_SMG</Group>
+          <WeaponFlags>CarriedInHand Automatic Gun</WeaponFlags>
           <Audio>AUDIO_ITEM_SMG</Audio>
           <HumanNameHash>WT_SMG</HumanNameHash>
           <FireType>INSTANT_HIT</FireType>

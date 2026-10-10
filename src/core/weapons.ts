@@ -52,6 +52,63 @@ export interface SoundHeader {
   smallReverb?: number
   mediumReverb?: number
   largeReverb?: number
+  /** Mix category (dat22) hash. */
+  category?: number
+  /** Distance attenuation curve (dat16) hash, the distance scale (100 = 1×) and the plateau. */
+  volumeCurve?: number
+  volumeCurveScale?: number
+  volumeCurvePlateau?: number
+  dopplerFactor?: number
+  speakerMask?: number
+  effectRoute?: number
+  preDelayVariable?: number
+  startOffsetVariable?: number
+}
+
+/** EnvelopeSound settings (ms, sustain in %). `mode` is what it shapes: 0 volume, 1 pitch, 2 pan, 3 LPF, 4 HPF, 5 a variable, 6/7 log LPF/HPF. */
+export interface EnvelopeSettings {
+  attack: number
+  decay: number
+  sustain: number
+  hold: number
+  release: number
+  attackVariance?: number
+  decayVariance?: number
+  sustainVariance?: number
+  holdVariance?: number
+  releaseVariance?: number
+  mode?: number
+  attackCurve?: number | null
+  decayCurve?: number | null
+  releaseCurve?: number | null
+  outputVariable?: number | null
+  outputMin?: number
+  outputMax?: number
+}
+
+/** The settings of a sound that decide when and how its children play (see the bridge's Usage.Cond). */
+export interface NodeCond {
+  mode?: number
+  minDistance?: number
+  maxDistance?: number
+  hysteresis?: number
+  crossfadeCurve?: number | null
+  distanceVariable?: number | null
+  crossfadeVariable?: number | null
+  variable?: number
+  conditionType?: number
+  value?: number
+  rhs?: number | null
+  loopCount?: number
+  loopCountVariance?: number
+  delay?: number
+  delayVariance?: number
+  innerAngle?: number
+  outerAngle?: number
+  rearAttenuation?: number
+  variables?: { name: number; value: number; variance: number; type: number }[]
+  entries?: number[]
+  minRepeatTime?: number
 }
 
 export interface SoundNode {
@@ -59,8 +116,48 @@ export interface SoundNode {
   header?: SoundHeader
   children?: number[]
   weights?: number[] | null
-  envelope?: { attack: number; decay: number; sustain: number; hold: number; release: number } | null
+  envelope?: EnvelopeSettings | null
   simple?: { container: number; file: number } | null
+  cond?: NodeCond | null
+}
+
+/** A mix category (dat22); values in mB / cents / Hz, scales in % (100 = 1×). */
+export interface MixCategory {
+  parent: number | null
+  volume: number
+  pitch: number
+  lpf: number
+  hpf: number
+  lpfDistanceCurve: number | null
+  hpfDistanceCurve: number | null
+  distanceRollOffScale: number
+  plateauRollOffScale: number
+  parentOverrides: number
+}
+
+/** A curve (dat16): its type and parameters as stored in the game data. */
+export interface Curve {
+  type: string
+  minInput: number
+  maxInput: number
+  [param: string]: number | string | number[] | number[][] | undefined
+}
+
+/** Typical indoor/outdoor values found in the game data (the real ones depend on where you are). */
+export interface EnvironmentPresets {
+  interiorWeapon?: { wetness: number; visibility: number; lpf: number; preDelay: number; hold: number; count: number; of: number } | null
+  outdoorEcho?: {
+    delay: number
+    delayVariance: number
+    attenuation: number
+    number: number
+    volume: number
+    reverbSmall: number
+    reverbMedium: number
+    reverbLarge: number
+    count: number
+    of: number
+  } | null
 }
 
 export interface WeaponVariant {
@@ -79,6 +176,8 @@ export interface Weapon {
   audio: string
   timeBetweenShots: number
   fireType: string
+  /** weapons.meta flags it as automatic (full-auto fire uses AutoSound). */
+  automatic?: boolean
   variants: WeaponVariant[]
 }
 
@@ -88,6 +187,10 @@ export interface WeaponIndex {
   weapons: Weapon[]
   nodes: Record<string, SoundNode>
   containers: Record<string, { pack: string; bank: string }>
+  /** Version 3+: mix categories, curves and environment presets used by the weapon sounds. */
+  categories?: Record<string, MixCategory>
+  curves?: Record<string, Curve>
+  environment?: EnvironmentPresets
   warnings: string[]
 }
 

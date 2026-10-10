@@ -5,18 +5,23 @@ A desktop app for making **GTA V / FiveM gun sound packs**. It reads every gun's
 ## What it does
 
 - **Finds your game on first launch.** It locates GTA V (from FiveM's settings or the usual Steam, Rockstar and Epic folders) or asks you for the folder. Then it reads every gun and its sounds straight from the game files, using [CodeWalker](https://github.com/dexyfex/CodeWalker)'s library, which is bundled with the app. Nothing in your game folder is changed.
-- **Lists every gun**, grouped by type and shown with its in-game name. Pick one to see its sounds grouped the way the game uses them:
-  - the gunshot
-  - the distant report
-  - the echo/tail
-  - suppressed shots
-  - shell casings
-  - every other sound field of the gun, folded below: handling (heft, rattle, reload, cover…), melee and impacts, and the slow-motion versions
-- **Shows your gun and what others hear separately.** **Your gun** is what the shooter hears; **Others hear** is what other players and NPCs hear. With **Same sound for everyone** on, one assignment covers both.
-- **Previews the full gunshot.**
-  - ▶ Original and ▶ Yours play it the way the game builds it, from the game's own sound data: every layer, random variation, level, pitch, delay, filter and envelope.
-  - It plays a single shot, or a burst at the gun's real fire rate.
-  - The outdoor and indoor reverb is an approximation, so the preview is close to the game but not identical.
+- **Lists every gun**, grouped by type and shown with its in-game name. Select one and you see **every file it uses**, under the part of the shot it belongs to (gunshot, rapid fire, distant report, echo, indoor shot, suppressed, casings, heft, reload, slow motion…). Each part says what it does, and each file says what it is and who hears it:
+
+  ```
+  GUNSHOT: Single shots: plays every time the gun fires.
+   ▶  Layer 1 of 2, plays together with the others, variation 1 of 2 (25% of shots)   You
+   ▶  Layer 2 of 2, plays together with the others                                    You
+   ▶  The whole gunshot                                                               Others
+  ECHO / TAIL: The echo of the shot in reflective places such as tunnels.
+   ▶  Close range (20–80 m), left channel                                             Everyone
+  ```
+
+  **Heard by** tells you whether a file is part of your own gun, of how other players and NPCs hear it, or both, straight from the gun's data. With **Others hear the same sound** on, replacing your gun's files also replaces the matching files others hear.
+- **Previews the shot from the game's data** (see [How the preview is built](#how-the-preview-is-built)).
+  - ▶ Original and ▶ Yours play every layer, random variation, level, pitch, delay, filter, mix category, distance curve, crossfade, stereo collapse and envelope the game data defines.
+  - Choose how far away you hear it (at the gun up to 300 m), outdoors, indoors or in a tunnel, and who fires it (you, or another player/NPC). Single shots or a burst at the gun's fire rate; automatic guns use their rapid-fire sound.
+  - It names what it had to approximate (the engine's reverb, where echoes come from…).
+  - **Compare with in-game recording…** loads a recording of the real gun (OBS, Audacity…), lines it up with the preview and lets you A/B them.
 - **Replaces sounds** with WAV, MP3, OGG, FLAC or M4A. Drop a file onto a part or assign it to a selection. A stereo file fills an L/R stream pair automatically. You can also silence or reset sounds.
 - **Shapes the audio:**
   - trim leading silence so shots fire instantly
@@ -28,31 +33,50 @@ A desktop app for making **GTA V / FiveM gun sound packs**. It reads every gun's
 
   ```
   my_gunpack/
-    WEAPONS_PLAYER.rpf   your own gun's sounds
-    RESIDENT.rpf         shared sounds: other players and NPCs
+    WEAPONS_PLAYER.rpf   weapon sound banks
+    RESIDENT.rpf         shared sound banks
     README.txt           where to put them
   ```
 
   The app rebuilds each archive from your own game: every file is copied over, with your changed sound banks swapped in. Only archives with changes are written. They're OPEN (unencrypted) archives, the standard format for mod folders.
-- **Shows what every sound is for.** Select any sound and **What it's for** lists every way the game plays it, traced through the game's audio data. For each one it shows:
-  - **who triggers it:** which gun (and whether it's your gun or what others hear), or an explosion, an animation tag, or game code/scripts;
-  - **which part it is:** gunshot, distant report, echo, reload, slow-mo…;
-  - **when it plays:** close range or distant (with the crossfade distances), which random variation and how often, which layer, left or right channel, which branch of a condition;
-  - **the exact path** in the data, from the game object down to the file.
 - **Identify sounds in game.** **Identify in game…** builds a test pack where every sound says its code, such as "pistol 4". Install it, play, and type what you hear into **What did I hear?** to jump to that sound. This confirms the data in game, and also catches sounds the game code or scripts play by name, which no data file explains. Without a Windows voice, the sounds beep their number instead.
 - **Saves projects** as `.gunpack` files. They hold your settings and your own source audio, never game files.
-- **Sound banks tab.** Every bank of both archives, labelled with what uses it (banks no gun uses load from the game when you open them). Each sound has a **Used for** column; filter by what you're after (e.g. "echo") or show only the unused ones. Manual `.awc` and CodeWalker XML import still work.
+- **Sound banks tab (advanced).** Every bank of both archives, labelled with what uses it (banks no gun uses load from the game when you open them). Each sound has a **Used for** column traced through the game's audio data (which gun, explosion, animation or script plays it); filter by what you're after (e.g. "echo") or show only the unused ones. Manual `.awc` and CodeWalker XML import still work.
 
 ## Which banks to replace
 
-| Bank | Used for |
+| Bank | Holds |
 | --- | --- |
-| `WEAPONS_PLAYER.rpf` → `*.awc` (e.g. `ptl_pistol.awc`, `smg_smg.awc`, `sht_pump.awc`) | Your own gun, as you hear it |
-| `RESIDENT.rpf` → `weapons.awc` | Shared weapon sounds: NPCs and other players' gunfire |
+| `WEAPONS_PLAYER.rpf` → `*.awc` (e.g. `ptl_pistol.awc`, `smg_smg.awc`, `sht_pump.awc`) | Per-gun weapon banks |
+| `RESIDENT.rpf` → `weapons.awc` and others | Shared banks, used by many guns and NPCs |
 
-Replace both. If you only change `WEAPONS_PLAYER.rpf`, other players and NPCs still sound vanilla. **Same sound for everyone** in the weapon view takes care of this.
+Don't go by the archive name alone: a gun's shot can mix files from both archives (community notes describe stock shots split into a left channel in `WEAPONS_PLAYER.rpf` and a right channel in `RESIDENT.rpf`). The gun view's **Heard by** column shows, from the gun's own data, which files you hear and which files other players and NPCs hear.
 
 After a scan, the Sound banks tab labels every bank from the game data, so there's no guessing. Without a scan, bank names marked **?** are inferred from file names.
+
+## How the preview is built
+
+CodeWalker can play the raw files in a bank, but not a gunshot: the game's audio engine builds each shot at runtime from a graph of sound objects, and CodeWalker has no engine to run it. Rockstar hasn't published how its engine plays weapons beyond high-level notes (a shot is about ten layers, mixed by distance, each with its own filter and reverb send). So the app runs the graph itself, following what the game data says. The sound types' meanings come from community research (Monkeypolice188's Monkys-Audio-Research and CodeWalker).
+
+**Taken exactly from the data:**
+- header volume, pitch (100 per semitone), pan (degrees), predelay, start offset, filters and variances;
+- mix categories (`categories.dat22`): their volume, pitch and filters, up the parent chain;
+- distance: the sound's volume curve (`curves.dat16`) scaled by its curve scale and the category's roll-off;
+- crossfades (near/far by distance; none, linear or equal power, or their curve) and stereo pairs narrowing to mono with distance;
+- random picks by weight (never the same twice in a row), layers, If/Switch branches from the variables the data sets;
+- envelopes on volume, pitch, pan or filters, with their curves and output range;
+- repeating sounds (start, repeat every DelayTime, stop), used for rapid fire on automatic guns;
+- the report's volume and delay deltas; the indoor shot indoors; the gun's echo in tunnels.
+
+**Approximated** (decided by the engine's code, not the data; the preview lists which ones a shot used):
+- the reverb itself (outdoor/indoor/tunnel; indoors uses the game's typical interior wetness, delay and filter);
+- where echoes come from outdoors (the count, delay and level come from the game's typical environment rule);
+- the default distance roll-off for sounds without their own curve, and a few curve shapes;
+- game variables the engine sets at runtime (taken as 0);
+- occlusion, doppler, the speed of sound, mixer scenes and voice limits (not modelled);
+- when shell casings land (physics).
+
+To hear the difference, record the gun in game and use **Compare with in-game recording…**; the ID pack confirms which file plays when.
 
 ## How the app knows what a sound is for
 
@@ -124,6 +148,7 @@ To run the optional real-file round-trip tests, point `AWC_SAMPLES_DIR` at a fol
   - `weapons.meta` → `<Audio>` item → `ItemAudioSettings` (player and NPC variants) → `WeaponSettings` (FireSound, ReportSound, EchoSound, …).
   - The full sound graph behind each of those (Multitrack, Randomized, Envelope, … down to `SimpleSound{ContainerName, FileName}`).
   - Container names resolved to banks via joaat(`<pack>/<bank>`).
+  - The mix categories (`.dat22`, with their parent chain) and curves (`.dat16`) those sounds use, every header field, envelope/crossfade/repeat settings, the `Automatic` weapon flag, and typical interior weapon and outdoor echo values (version 3 index).
   - `sound-map.json` (`bridge/Usage.cs`) records:
     - every stream of every `weapons_player`/`resident` bank, with the sounds that play it (SimpleSound, GranularSound channel, AutomationSound MIDI);
     - every ancestor in the sound graph, with its parents and slots and the settings that pick a child (crossfade distances, weights, If/Switch variables, sound set entries…);
@@ -148,7 +173,8 @@ To run the optional real-file round-trip tests, point `AWC_SAMPLES_DIR` at a fol
 | `bridge/` | .NET 8 CodeWalker bridge: scans the game (weapons, sound graphs, the usage map, banks), extracts and rebuilds archives, speaks ID labels |
 | `src/core/usage.ts`, `src/core/fields.ts` | What every stream is for, and what each game-object sound field means |
 | `src/core/idpack.ts`, `src/main/idPack.ts` | The in-game ID pack: codes, spoken/beep labels, bank building within the original size, legend |
-| `src/core/weapons.ts`, `src/core/soundgraph.ts` | Weapon index, gun parts, and the in-game shot planner |
+| `src/core/weapons.ts`, `src/core/soundgraph.ts`, `src/core/curves.ts` | Weapon index, gun parts, and the shot planner (distance, categories, curves, envelopes) |
+| `src/core/describe.ts` | Every file of a gun under its part, with a short description |
 | `src/preload/` | `window.api` bridge (context isolation, sandboxed renderer) |
 | `src/renderer/` | React UI |
 

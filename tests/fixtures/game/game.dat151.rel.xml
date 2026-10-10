@@ -25,6 +25,7 @@
    <EchoSound>pistol_echo</EchoSound>
    <HeftSound>pistol_heft</HeftSound>
    <ReloadSounds>pistol_reload_set</ReloadSounds>
+   <InteriorShotSound>pistol_interior</InteriorShotSound>
    <SlowMoFireSound>pistol_slowmo</SlowMoFireSound>
   </Item>
   <Item type="WeaponSettings" ntOffset="0">
@@ -42,6 +43,7 @@
    <Flags value="0" />
    <Version value="0" />
    <FireSound>smg_player_fire</FireSound>
+   <AutoSound>smg_auto</AutoSound>
   </Item>
   <Item type="ExplosionAudioSettings" ntOffset="0">
    <Name>explosion_grenade</Name>
@@ -57,6 +59,28 @@
    <SlowMoExplosionPreSuckSound />
    <SlowMoExplosionPreSuckSoundTime value="0" />
    <SlowMoExplosionPreSuckMixerScene value="0" />
+  </Item>
+  <Item type="InteriorWeaponMetrics" ntOffset="0">
+   <Name>int_weapons_default</Name>
+   <Wetness value="0.4" />
+   <Visability value="1" />
+   <LPFCutoff value="12000" />
+   <PreDelay value="15" />
+   <Hold value="0.5" />
+  </Item>
+  <Item type="EnvironmentRule" ntOffset="0">
+   <Name>er_city</Name>
+   <Flags value="0" />
+   <ReverbSmall value="0.2" />
+   <ReverbMedium value="0.3" />
+   <ReverbLarge value="0.5" />
+   <ReverbDamp value="0.5" />
+   <EchoDelay value="180" />
+   <EchoDelayVariance value="40" />
+   <EchoAttenuation value="-6" />
+   <EchoNumber value="2" />
+   <EchoSoundList value="0" />
+   <BaseEchoVolumeModifier value="-3" />
   </Item>
  </Items>
 </Dat151>

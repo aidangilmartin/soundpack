@@ -35,7 +35,8 @@ describe('buildBanks', () => {
     expect(result.packName).toBe('test_pack')
     expect(result.archives).toEqual(['WEAPONS_PLAYER.rpf'])
     expect(result.banks.map((b) => [b.pack, b.file, b.replaced, b.silenced])).toEqual([['weapons_player', 'ptl_pistol.awc', 1, 1]])
-    expect(result.warnings.some((w) => w.includes('RESIDENT.rpf'))).toBe(true)
+    // which files others hear comes from the gun's data (the gun view), not from the archive name
+    expect(result.warnings).toEqual([])
 
     const awc = parseAwc(result.banks[0].bytes)
     const replaced = awc.streams.find((s) => s.id === 0x16ef0ea5)!
@@ -47,12 +48,12 @@ describe('buildBanks', () => {
     expect(Array.from(decodeStreamPcm(untouched).pcm)).toEqual(Array.from(decodeStreamPcm(orig).pcm))
   })
 
-  it('rebuilds both archives when both packs change, without the RESIDENT warning', () => {
+  it('rebuilds both archives when both packs change', () => {
     let project = assignSource(newProject(), 'weapons_player', 'ptl_pistol.awc', [0x16ef0ea5], source, DEFAULT_SHAPE, [])
     project = assignSource(project, 'resident', 'weapons.awc', [0x16ef0ea5], source, DEFAULT_SHAPE, [])
     const r = buildBanks({ project, templates, sources })
     expect(r.archives).toEqual(['WEAPONS_PLAYER.rpf', 'RESIDENT.rpf'])
-    expect(r.warnings.some((w) => w.includes('RESIDENT.rpf'))).toBe(false)
+    expect(r.warnings).toEqual([])
   })
 
   it('skips banks outside the two archives', () => {

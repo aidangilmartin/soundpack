@@ -1,7 +1,6 @@
 import { replaceStreamAudio, silenceStream } from './awc/replace'
 import { AwcFile, getFormat } from './awc/types'
 import { writeAwc } from './awc/write'
-import { PACK_RESIDENT, PACK_WEAPONS_PLAYER } from './catalog'
 import { shapeAudio } from './dsp'
 import { hex8 } from './hash'
 import { PACK_ARCHIVES, sanitizePackName } from './pack'
@@ -98,12 +97,6 @@ export function buildBanks(input: BuildInput): BuildResult {
 
     const out: AwcFile = { ...template, streams: template.streams.map((s) => byId.get(s.id)!) }
     banks.push({ pack: bank.pack, file: bank.file, bytes: writeAwc(out), replaced, silenced })
-  }
-
-  const touchesPlayer = active.some((b) => b.pack === PACK_WEAPONS_PLAYER)
-  const touchesShared = active.some((b) => bankKey(b.pack, b.file) === bankKey(PACK_RESIDENT, 'weapons.awc'))
-  if (touchesPlayer && !touchesShared) {
-    warnings.push('RESIDENT.rpf (weapons.awc) is unchanged, so other players and NPCs still sound vanilla.')
   }
 
   const archives = [...new Set(banks.map((b) => PACK_ARCHIVES[b.pack]))]

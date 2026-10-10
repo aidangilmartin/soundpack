@@ -55,35 +55,38 @@ test('first launch: find GTA V, edit a gun, preview it and export', async () => 
   await expect(page.getByRole('heading', { name: 'Gunshot', exact: true })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Distant report' })).toBeVisible()
   await expect(page.getByText('400 rounds/min')).toBeVisible()
-  // every other sound field of the gun is listed too, folded by kind
-  await expect(page.locator('details.field-group summary', { hasText: 'Slow motion' })).toBeVisible()
-  await expect(page.locator('details.field-group summary', { hasText: 'Handling' })).toContainText('Reload sounds')
+  // every file of the gun, under its part, all open, with what it is and who hears it
+  for (const part of ['Echo / tail', 'Heft', 'Indoor shot', 'Reload sounds', 'Slow-mo gunshot']) {
+    await expect(page.getByRole('heading', { name: part, exact: true })).toBeVisible()
+  }
+  const gunshot = page.locator('.role-group', { has: page.getByRole('heading', { name: 'Gunshot', exact: true }) })
+  const rows = gunshot.locator('tbody tr')
+  await expect(rows).toHaveCount(4)
+  await expect(rows.first()).toContainText('variation 1 of 2 (25% of shots)')
+  await expect(rows.first()).toContainText('You')
+  await expect(rows.last()).toContainText('The whole gunshot')
+  await expect(rows.last()).toContainText('Others')
+  await rows.first().click()
+  await expect(page.locator('.inspector h3')).toContainText('Gunshot: Layer 1 of 2')
+  if (shots) await page.screenshot({ path: join(shots, '5-gun.png') })
 
-  // what a sound is for, traced through the game data
-  const gunshotRows = page.locator('.role-group', { has: page.getByRole('heading', { name: 'Gunshot', exact: true }) }).locator('tbody tr')
-  await gunshotRows.first().click()
-  const usage = page.locator('.panel.usage')
-  await expect(usage.getByRole('heading', { name: "What it's for" })).toBeVisible()
-  await expect(usage.locator('.use').first()).toContainText('Your gun')
-  await expect(usage.locator('.use').first()).toContainText('Pistol · Gunshot')
-  await expect(usage).toContainText('ID pack code')
-  if (shots) await page.screenshot({ path: join(shots, '5-usage.png') })
-
-  // in-game preview of the original gunshot
+  // the preview follows the game data at a distance, says what it approximated, and compares with a recording
+  await page.getByRole('combobox', { name: 'Distance' }).selectOption('100')
   await page.getByRole('button', { name: '▶ Original' }).click()
   await expect(page.locator('.preview-bar .waveform-label', { hasText: 'Original' })).toBeVisible()
-
-  // replace the whole gunshot (also covers what others hear)
-  const gunshot = page.locator('.role-group', { has: page.getByRole('heading', { name: 'Gunshot', exact: true }) })
-  await gunshot.getByRole('button', { name: 'Select all' }).click()
+  await expect(page.locator('.preview-note')).toContainText("the engine's default distance roll-off")
   await stubOpen(app, [wavPath])
+  await page.getByRole('button', { name: 'Compare with in-game recording…' }).click()
+  await expect(page.getByRole('button', { name: /Recording/ })).toBeVisible()
+  await expect(page.locator('.preview-bar .waveform-label', { hasText: 'In-game recording' })).toBeVisible()
+  await page.getByRole('combobox', { name: 'Distance' }).selectOption('0')
+
+  // replace the whole gunshot: your files and what others hear
+  await gunshot.getByRole('button', { name: 'Select all' }).click()
   await page.getByRole('button', { name: 'Add sound…' }).click()
-  await expect(page.getByText('Also changes 1 matching sound that others hear.')).toBeVisible()
   await page.getByRole('button', { name: /^Assign/ }).click()
-  await expect(gunshot.locator('tbody tr').first()).toContainText('my_shot.wav')
-  await page.getByRole('tab', { name: 'Others hear' }).click()
-  await expect(page.locator('.role-group').first()).toContainText('my_shot.wav')
-  await page.getByRole('tab', { name: 'Your gun' }).click()
+  await expect(rows.first()).toContainText('my_shot.wav')
+  await expect(rows.last()).toContainText('my_shot.wav')
 
   await page.getByRole('button', { name: 'Burst ×5' }).click()
   await page.getByRole('button', { name: '▶ Yours' }).click()
@@ -190,6 +193,6 @@ test('sound banks: every bank, what each sound is for, and the in-game ID pack',
   await dialog.getByRole('button', { name: 'Find' }).click()
   await expect(dialog).toBeHidden()
   await expect(page.locator('table.streams tbody tr.selected')).toContainText('16EF0EA5')
-  await expect(page.locator('.panel.usage')).toContainText('Explosion')
+  await expect(page.locator('.inspector h3')).toContainText('Explosion')
   await app.close()
 })

@@ -14,8 +14,8 @@ interface Props {
 }
 
 const ARCHIVE_ROLE: Record<string, string> = {
-  'WEAPONS_PLAYER.rpf': 'your own gun',
-  'RESIDENT.rpf': 'other players and NPCs'
+  'WEAPONS_PLAYER.rpf': 'weapon sound banks',
+  'RESIDENT.rpf': 'shared sound banks'
 }
 
 export function ExportDialog({ project, onChange, onBuild, onExport, onClose }: Props) {

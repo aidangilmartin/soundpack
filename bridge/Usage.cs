@@ -214,7 +214,15 @@ public static class SoundUsage
         var children = ChildrenOf(s);
         object? simple = s is Dat54SimpleSound ss ? new { container = (uint)ss.ContainerName, file = (uint)ss.FileName & 0x1FFFFFFF } : null;
         object? envelope = s is Dat54EnvelopeSound e
-            ? new { attack = (int)e.Attack, decay = (int)e.Decay, sustain = (int)e.Sustain, hold = e.Hold, release = e.Release }
+            ? new
+            {
+                attack = (int)e.Attack, decay = (int)e.Decay, sustain = (int)e.Sustain, hold = e.Hold, release = e.Release,
+                attackVariance = (int)e.AttackVariance, decayVariance = (int)e.DecayVariance, sustainVariance = (int)e.SustainVariance,
+                holdVariance = (int)e.HoldVariance, releaseVariance = e.ReleaseVariance,
+                // what the envelope shapes: 0 volume, 1 pitch, 2 pan, 3 LPF, 4 HPF, 5 a variable, 6/7 log LPF/HPF
+                mode = e.Mode, attackCurve = Opt(e.AttackCurve), decayCurve = Opt(e.DecayCurve), releaseCurve = Opt(e.ReleaseCurve),
+                outputVariable = Opt(e.OutputVariable), outputMin = e.OutputRangeMin, outputMax = e.OutputRangeMax
+            }
             : null;
         return new
         {
@@ -235,7 +243,7 @@ public static class SoundUsage
         Dat54CrossfadeSound c => new
         {
             mode = (int)c.Mode, minDistance = c.MinDistance, maxDistance = c.MaxDistance, hysteresis = c.Hysteresis,
-            distanceVariable = Opt(c.DistanceVariable), crossfadeVariable = Opt(c.CrossfadeVariable),
+            crossfadeCurve = Opt(c.CrossfadeCurve), distanceVariable = Opt(c.DistanceVariable), crossfadeVariable = Opt(c.CrossfadeVariable),
             minDistanceVariable = Opt(c.MinDistanceVariable), maxDistanceVariable = Opt(c.MaxDistanceVariable)
         },
         Dat54CollapsingStereoSound c => new
@@ -270,10 +278,66 @@ public static class SoundUsage
 
     static uint? Opt(MetaHash h) => h.Hash == 0 ? null : h.Hash;
 
-    /// <summary>Only the header fields the game data actually sets (absent fields use engine defaults).</summary>
-    public static Dictionary<string, int> Header(RelSoundHeader? h)
+    /// <summary>The curves (dat16) a sound refers to: distance attenuation, crossfade and envelope shapes.</summary>
+    public static IEnumerable<uint> CurvesOf(Dat54Sound s)
     {
-        var d = new Dictionary<string, int>();
+        var h = Header(s.Header);
+        if (h.TryGetValue("volumeCurve", out var vc)) yield return (uint)vc;
+        if (s is Dat54CrossfadeSound c && c.CrossfadeCurve != 0) yield return c.CrossfadeCurve;
+        if (s is Dat54EnvelopeSound e)
+            foreach (var x in new[] { e.AttackCurve, e.DecayCurve, e.ReleaseCurve })
+                if (x != 0) yield return x;
+    }
+
+    /// <summary>A curve's type and parameters, as written in curves.dat16.</summary>
+    public static object CurveJson(Dat16RelData c)
+    {
+        var d = new Dictionary<string, object> { ["type"] = c.Type.ToString() };
+        foreach (var p in c.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly))
+        {
+            var key = char.ToLowerInvariant(p.Name[0]) + p.Name[1..];
+            switch (TryGet(p, c))
+            {
+                case float f:
+                    d[key] = f;
+                    break;
+                case int i:
+                    d[key] = i;
+                    break;
+                case uint u when p.Name != "NumPoints":
+                    d[key] = u;
+                    break;
+                case float[] fa:
+                    d[key] = fa;
+                    break;
+                case SharpDX.Vector2[] pts:
+                    d[key] = pts.Select(v => new[] { v.X, v.Y }).ToArray();
+                    break;
+            }
+        }
+        d.Remove("valueCount");
+        return d;
+    }
+
+    /// <summary>A sound category (dat22): its mix settings and its parent (categories only list their children).</summary>
+    public static object CategoryJson(Dat22Category c, uint? parent) => new
+    {
+        parent,
+        volume = (int)c.Volume,
+        pitch = (int)c.Pitch,
+        lpf = (int)c.LPFCutoff,
+        hpf = (int)c.HPFCutoff,
+        lpfDistanceCurve = Opt(c.LPFDistanceCurve),
+        hpfDistanceCurve = Opt(c.HPFDistanceCurve),
+        distanceRollOffScale = (int)c.DistanceRollOffScale,
+        plateauRollOffScale = (int)c.PlateauRollOffScale,
+        parentOverrides = (int)c.ParentOverrides
+    };
+
+    /// <summary>Only the header fields the game data actually sets (absent fields use engine defaults).</summary>
+    public static Dictionary<string, long> Header(RelSoundHeader? h)
+    {
+        var d = new Dictionary<string, long>();
         if (h == null) return d;
         uint f = h.Flags;
         bool Has(int bit) => ((f >> (bit / 8 * 8)) & 0xFF) != 0xAA && ((f >> bit) & 1) != 0;
@@ -289,10 +353,19 @@ public static class SoundUsage
         if (Has(11)) d["startOffsetVariance"] = h.StartOffsetVariance;
         if (Has(12)) d["attack"] = h.AttackTime;
         if (Has(13)) d["release"] = h.ReleaseTime;
+        if (Has(14)) d["dopplerFactor"] = h.DopplerFactor;
+        if (Has(15)) d["category"] = (uint)h.Category;
         if (Has(16)) d["lpf"] = h.LPFCutoff;
         if (Has(17)) d["lpfVariance"] = h.LPFCutoffVariance;
         if (Has(18)) d["hpf"] = h.HPFCutoff;
         if (Has(19)) d["hpfVariance"] = h.HPFCutoffVariance;
+        if (Has(20)) d["volumeCurve"] = (uint)h.VolumeCurve;
+        if (Has(21)) d["volumeCurveScale"] = h.VolumeCurveScale;
+        if (Has(22)) d["volumeCurvePlateau"] = h.VolumeCurvePlateau;
+        if (Has(23)) d["speakerMask"] = h.SpeakerMask;
+        if (Has(24)) d["effectRoute"] = h.EffectRoute;
+        if (Has(25)) d["preDelayVariable"] = (uint)h.PreDelayVariable;
+        if (Has(26)) d["startOffsetVariable"] = (uint)h.StartOffsetVariable;
         if (Has(27)) d["smallReverb"] = h.SmallReverbSend;
         if (Has(28)) d["mediumReverb"] = h.MediumReverbSend;
         if (Has(29)) d["largeReverb"] = h.LargeReverbSend;

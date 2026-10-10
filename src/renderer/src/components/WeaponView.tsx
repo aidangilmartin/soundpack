@@ -1,38 +1,25 @@
-import { useEffect, useMemo, useRef, useState, type DragEvent, type MouseEvent, type ReactElement } from 'react'
+import { useEffect, useMemo, useRef, useState, type DragEvent, type MouseEvent } from 'react'
 import { decodeStreamPcm } from '@core/awc/replace'
 import { getFormat } from '@core/awc/types'
-import { shapeAudio } from '@core/dsp'
-import { hex8 } from '@core/hash'
+import { gunFiles, fileLabel, type GunFile, type HeardBy } from '@core/describe'
+import { findOnset, pickChannel, shapeAudio } from '@core/dsp'
 import { bankKey, findAssignment, type Project, type StreamRef } from '@core/project'
-import { FIELD_GROUP_LABELS, GROUP_ORDER_FIELDS, WEAPON_FIELDS, type FieldGroup } from '@core/fields'
-import { DEFAULT_SHOT_ROLES, newPlanState, planBurst, planShot, seededRng, SUPPRESSED_SHOT_ROLES, type Voice } from '@core/soundgraph'
-import {
-  audienceVariants,
-  fireRate,
-  GROUP_LABELS,
-  orderedRoles,
-  roleGroup,
-  roleLabel,
-  weaponLabel,
-  weaponParts,
-  type Role,
-  type Weapon,
-  type WeaponIndex,
-  type WeaponPart
-} from '@core/weapons'
-import { player } from '../audio'
-import { fmtDuration, refKey, streamName, type LoadedTemplate, type SourceEntry } from '../model'
-import { mixdown, renderPreview, toFloat, type Environment, type ResolvedWave } from '../preview'
+import { newPlanState, planBurst, planShot, seededRng, shotRoles, type Environment, type Listener, type Voice } from '@core/soundgraph'
+import { audienceVariants, fireRate, GROUP_LABELS, roleLabel, weaponLabel, weaponParts, type Weapon, type WeaponIndex } from '@core/weapons'
+import { decodeAudio, player } from '../audio'
+import { fmtDuration, refKey, type LoadedTemplate, type SourceEntry } from '../model'
+import { mixdown, renderPreview, toFloat, type ResolvedWave } from '../preview'
 import { Waveform } from './Waveform'
 
 interface Props {
   index: WeaponIndex
   weapon: Weapon
+  /** Readable names for hashes (from the sound map), for sound set entries and conditions. */
+  names: Record<string, string>
   templates: Map<string, LoadedTemplate>
   ensureBank: (pack: string, bank: string) => void
   project: Project
   sources: Map<string, SourceEntry>
-  labels: Record<string, string>
   selection: StreamRef[]
   focus: StreamRef | null
   playing: string | null
@@ -42,36 +29,52 @@ interface Props {
   onPlayPart: (ref: StreamRef, which: 'original' | 'new') => void
   onDropFiles: (files: File[], refs: StreamRef[]) => void
   onError: (message: string) => void
-  /** One line on what a stream is for (from the sound map), shown as a tooltip. */
-  usageSummary?: (ref: StreamRef) => string
 }
 
-type Audience = 'player' | 'others'
+const HEARD_BY: Record<HeardBy, string> = { you: 'You', others: 'Others', everyone: 'Everyone' }
+const DISTANCES: [number, string][] = [
+  [0, 'At the gun'],
+  [10, '10 m away'],
+  [25, '25 m away'],
+  [50, '50 m away'],
+  [100, '100 m away'],
+  [300, '300 m away']
+]
 
-const toRef = (p: WeaponPart): StreamRef => ({ pack: p.pack, file: p.bank, streamId: p.streamId })
+const toRef = (f: GunFile): StreamRef => ({ pack: f.pack, file: f.bank, streamId: f.streamId })
+
+interface Recording {
+  name: string
+  samples: Float32Array
+  sampleRate: number
+}
 
 export function WeaponView(props: Props) {
-  const { index, weapon, templates, project, sources, labels, selection, focus, playing } = props
-  const [audience, setAudience] = useState<Audience>('player')
-  const [env, setEnv] = useState<Environment>('outdoor')
+  const { index, weapon, templates, project, sources, selection, focus, playing } = props
+  const [listenAs, setListenAs] = useState<'you' | 'npc'>('you')
+  const [distance, setDistance] = useState(0)
+  const [environment, setEnvironment] = useState<Environment>('outdoor')
   const [burst, setBurst] = useState(false)
   const [suppressed, setSuppressed] = useState(false)
   const [seed, setSeed] = useState(1)
   const [busy, setBusy] = useState<string | null>(null)
   const [last, setLast] = useState<{ which: 'original' | 'yours'; samples: Float32Array; approximations: string[] } | null>(null)
+  const [recording, setRecording] = useState<Recording | null>(null)
   const [dropRole, setDropRole] = useState<string | null>(null)
   const originals = useRef(new Map<string, ResolvedWave>())
   const shaped = useRef(new Map<string, ResolvedWave>())
 
   const variants = useMemo(() => audienceVariants(index, weapon), [index, weapon])
-  const variant = audience === 'others' && variants.others ? variants.others : variants.player
-  const parts = useMemo(() => (variant ? weaponParts(index, variant) : []), [index, variant])
+  const variant = listenAs === 'npc' && variants.others ? variants.others : variants.player
+  const sections = useMemo(() => gunFiles(index, weapon, props.names), [index, weapon, props.names])
   const hasSuppressed = !!variant?.roles.suppressed
+  const fullAuto = !!weapon.automatic && !!variant?.roles.auto
 
   useEffect(() => {
     setLast(null)
     setSuppressed(false)
-    setAudience('player')
+    setListenAs('you')
+    setRecording(null)
   }, [weapon.name])
 
   // load every bank this weapon uses (both audiences)
@@ -84,26 +87,8 @@ export function WeaponView(props: Props) {
     }
   }, [index, weapon])
 
-  const byRole = useMemo(() => {
-    const m = new Map<Role, WeaponPart[]>()
-    for (const p of parts) m.set(p.role, [...(m.get(p.role) ?? []), p])
-    return orderedRoles(m.keys()).map((r) => ({ role: r, parts: m.get(r)! }))
-  }, [parts])
-  // shooting parts first and open; handling, melee, slow motion… folded below
-  const byGroup = useMemo(
-    () =>
-      GROUP_ORDER_FIELDS.map((group) => ({ group, roles: byRole.filter((r) => roleGroup(r.role) === group) })).filter(
-        (g) => g.roles.length > 0
-      ),
-    [byRole]
-  )
-  const ordered = byRole.flatMap((g) => g.parts.map(toRef))
-  // the game sometimes reuses one wave in several parts; replacing it changes all of them
-  const rolesOf = useMemo(() => {
-    const m = new Map<string, Role[]>()
-    for (const p of parts) m.set(refKey(toRef(p)), [...(m.get(refKey(toRef(p))) ?? []), p.role])
-    return m
-  }, [parts])
+  const ordered = sections.flatMap((s) => s.files.map(toRef))
+  const fileCount = new Set(ordered.map(refKey)).size
   const selected = new Set(selection.map(refKey))
 
   const resolve =
@@ -149,14 +134,19 @@ export function WeaponView(props: Props) {
     try {
       // the same seed for both, so original and yours pick the same random variations
       const state = newPlanState(seededRng(seed))
-      const roles = suppressed ? SUPPRESSED_SHOT_ROLES : DEFAULT_SHOT_ROLES
+      const listener: Listener = { distance, environment }
+      const roles = shotRoles(variant, environment, suppressed)
       const voices = burst
-        ? planBurst(index, variant, state, 5, weapon.timeBetweenShots, roles)
-        : planShot(index, variant, state, { roles })
-      const buffer = await renderPreview(voices, resolve(which), env)
+        ? planBurst(index, variant, state, 5, weapon.timeBetweenShots, roles, listener, weapon)
+        : planShot(index, variant, state, { roles, listener })
+      const buffer = await renderPreview(voices, resolve(which), { environment, presets: index.environment })
       if (!buffer) {
         props.onError(
-          which === 'yours' ? 'Everything in this shot is silenced.' : "This gun's sound banks aren't in your library. Scan the game again."
+          which === 'yours'
+            ? 'Everything in this shot is silenced.'
+            : distance > 0
+              ? 'Nothing of this shot is audible from that far.'
+              : "This gun's sound banks aren't in your library. Scan the game again."
         )
         return
       }
@@ -166,6 +156,27 @@ export function WeaponView(props: Props) {
       props.onError((e as Error).message)
     } finally {
       setBusy(null)
+    }
+  }
+
+  /** A recording of the real in-game shot, aligned to its first transient for A/B against the preview. */
+  const loadRecording = async (): Promise<void> => {
+    const [file] = await window.api.pickAudioFiles()
+    if (!file) return
+    try {
+      const audio = await decodeAudio(file.name, file.bytes)
+      const mono = pickChannel(audio, 'mix')
+      const onset = findOnset(mono, -40)
+      const samples = mono.slice(Math.max(0, onset - Math.round(audio.sampleRate * 0.005)))
+      // match the preview's loudness (peak) so the two compare by sound, not level
+      let peak = 0
+      for (const x of samples) peak = Math.max(peak, Math.abs(x))
+      let target = 0
+      for (const x of last?.samples ?? []) target = Math.max(target, Math.abs(x))
+      const gain = peak > 0 ? (target || 0.5) / peak : 1
+      setRecording({ name: file.name, samples: samples.map((x) => x * gain), sampleRate: audio.sampleRate })
+    } catch (e) {
+      props.onError((e as Error).message)
     }
   }
 
@@ -191,115 +202,8 @@ export function WeaponView(props: Props) {
   }
 
   const rpm = fireRate(weapon)
-  const changedHere = parts.filter((p) => findAssignment(project, toRef(p))).length
-
-  const renderRole = ({ role, parts: rp }: { role: Role; parts: WeaponPart[] }): ReactElement => {
-    const refs = rp.map(toRef)
-    return (
-      <section
-        key={role}
-        className={`role-group${dropRole === role ? ' drop' : ''}`}
-        onDragOver={(e) => {
-          e.preventDefault()
-          setDropRole(role)
-        }}
-        onDragLeave={() => setDropRole((r) => (r === role ? null : r))}
-        onDrop={(e) => drop(e, refs)}
-      >
-        <div className="role-header">
-          <h3 title={WEAPON_FIELDS[role]?.meaning}>{roleLabel(role)}</h3>
-          <span className="muted small">
-            {rp.length} {rp.length === 1 ? 'sound' : 'sounds'}
-            {rp.length > 1 && role !== 'shellCasing' ? ' · the game layers and randomizes these' : ''}
-          </span>
-          <button className="btn subtle small" onClick={() => props.onSelect(refs, refs[0])}>
-            Select all
-          </button>
-        </div>
-        <table className="streams">
-          <tbody>
-            {rp.map((p) => {
-              const ref = toRef(p)
-              const k = refKey(ref)
-              const t = templates.get(bankKey(p.pack, p.bank))
-              const summary = t?.summaries.find((s) => s.id === p.streamId)
-              const a = findAssignment(project, ref)
-              const src = a?.sourceId ? sources.get(a.sourceId) : undefined
-              const tagOrig = `orig:${bankKey(p.pack, p.bank)}:${p.streamId}`
-              const tagNew = `new:${bankKey(p.pack, p.bank)}:${p.streamId}`
-              return (
-                <tr
-                  key={k}
-                  className={`${selected.has(k) ? 'selected' : ''}${focus && refKey(focus) === k ? ' focus' : ''}`}
-                  title={props.usageSummary?.(ref) || undefined}
-                  onClick={(e) => click(e, ref)}
-                  onDoubleClick={() => props.onPlayPart(ref, 'original')}
-                  onDrop={(e) => drop(e, selected.has(k) ? selection : [ref])}
-                >
-                  <td className="col-play">
-                    <button
-                      className={`icon-btn${playing === tagOrig ? ' playing' : ''}`}
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        props.onPlayPart(ref, 'original')
-                      }}
-                      aria-label="Play original"
-                      disabled={!summary}
-                    >
-                      {playing === tagOrig ? '■' : '▶'}
-                    </button>
-                  </td>
-                  <td className="name-cell">
-                    {t ? streamName(t, p.streamId, labels) : `0x${hex8(p.streamId)}`}
-                    {(rolesOf.get(k)?.length ?? 0) > 1 && (
-                      <span
-                        className="badge"
-                        title={`The game also uses this sound for: ${rolesOf
-                          .get(k)!
-                          .filter((r) => r !== role)
-                          .map((r) => roleLabel(r))
-                          .join(', ')}`}
-                      >
-                        shared
-                      </span>
-                    )}
-                  </td>
-                  <td className="muted small mono">
-                    {p.pack}/{p.bank.replace(/\.awc$/, '')}
-                  </td>
-                  <td className="col-num">{summary ? fmtDuration(summary.duration) : t ? '—' : '…'}</td>
-                  <td>
-                    <div className="status-cell">
-                      {!t && <span className="badge warn">bank not loaded</span>}
-                      {a?.action === 'silence' && <span className="badge warn">Silenced</span>}
-                      {a?.action === 'replace' && (
-                        <>
-                          <button
-                            className={`icon-btn small${playing === tagNew ? ' playing' : ''}`}
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              props.onPlayPart(ref, 'new')
-                            }}
-                            aria-label="Play replacement"
-                          >
-                            {playing === tagNew ? '■' : '▶'}
-                          </button>
-                          <span className="badge accent" title={src?.info.fileName}>
-                            {src?.info.fileName ?? 'missing audio'}
-                            {a.shape.channel !== 'mix' ? ` (${a.shape.channel === 'left' ? 'L' : 'R'})` : ''}
-                          </span>
-                        </>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
-      </section>
-    )
-  }
+  const changedHere = new Set(ordered.filter((r) => findAssignment(project, r)).map(refKey)).size
+  const recTag = `recording:${weapon.name}`
 
   return (
     <section className="bank-view weapon-view">
@@ -308,33 +212,13 @@ export function WeaponView(props: Props) {
           <h2>{weaponLabel(weapon)}</h2>
           <p className="muted small">
             {GROUP_LABELS[weapon.group] ?? weapon.group} · <span className="mono">{weapon.name}</span>
-            {rpm ? ` · ${rpm} rounds/min` : ''} · {parts.length} sound parts{changedHere ? ` · ${changedHere} changed` : ''}
+            {rpm ? ` · ${rpm} rounds/min` : ''} · {fileCount} files{changedHere ? ` · ${changedHere} changed` : ''}
           </p>
         </div>
-        {variants.others && (
-          <div className="segmented" role="tablist" aria-label="Whose gunshot">
-            <button
-              role="tab"
-              aria-selected={audience === 'player'}
-              className={audience === 'player' ? 'on' : ''}
-              onClick={() => setAudience('player')}
-            >
-              Your gun
-            </button>
-            <button
-              role="tab"
-              aria-selected={audience === 'others'}
-              className={audience === 'others' ? 'on' : ''}
-              onClick={() => setAudience('others')}
-            >
-              Others hear
-            </button>
-          </div>
-        )}
       </header>
 
       <div className="preview-bar">
-        <div className="row gap">
+        <div className="row gap wrap">
           <button
             className={`btn${playing === `preview:${weapon.name}:original` ? ' playing' : ''}`}
             onClick={() => void preview('original')}
@@ -357,20 +241,63 @@ export function WeaponView(props: Props) {
               Single
             </button>
             <button className={burst ? 'on' : ''} onClick={() => setBurst(true)} aria-pressed={burst}>
-              Burst ×5
+              {fullAuto ? 'Full auto ×5' : 'Burst ×5'}
             </button>
           </span>
-          <label className="small">
-            <select value={env} onChange={(e) => setEnv(e.target.value as Environment)} aria-label="Environment">
-              <option value="outdoor">Outdoors</option>
-              <option value="indoor">Indoors</option>
-              <option value="dry">Dry (no environment)</option>
-            </select>
-          </label>
           {hasSuppressed && (
             <label className="small row gap">
               <input type="checkbox" checked={suppressed} onChange={(e) => setSuppressed(e.target.checked)} /> Suppressor
             </label>
+          )}
+        </div>
+        <div className="row gap wrap">
+          <label className="small">
+            Hear it{' '}
+            <select value={distance} onChange={(e) => setDistance(Number(e.target.value))} aria-label="Distance">
+              {DISTANCES.map(([d, label]) => (
+                <option key={d} value={d}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="small">
+            <select value={environment} onChange={(e) => setEnvironment(e.target.value as Environment)} aria-label="Where">
+              <option value="outdoor">Outdoors</option>
+              <option value="interior">Indoors</option>
+              <option value="tunnel">In a tunnel</option>
+            </select>
+          </label>
+          {variants.others && (
+            <label className="small">
+              Fired by{' '}
+              <select value={listenAs} onChange={(e) => setListenAs(e.target.value as 'you' | 'npc')} aria-label="Fired by">
+                <option value="you">You</option>
+                <option value="npc">Another player / NPC</option>
+              </select>
+            </label>
+          )}
+          {recording ? (
+            <span className="row gap small">
+              <button
+                className={`btn subtle small${playing === recTag ? ' playing' : ''}`}
+                onClick={() => player.toggle(recTag, recording.samples, recording.sampleRate)}
+                title={recording.name}
+              >
+                {playing === recTag ? '■' : '▶'} Recording
+              </button>
+              <button className="icon-btn small" onClick={() => setRecording(null)} aria-label="Remove recording">
+                ✕
+              </button>
+            </span>
+          ) : (
+            <button
+              className="btn subtle small"
+              onClick={() => void loadRecording()}
+              title="Load a recording of this gun firing in GTA V (OBS, Audacity…) to compare it with the preview"
+            >
+              Compare with in-game recording…
+            </button>
           )}
         </div>
         {last && (
@@ -381,37 +308,122 @@ export function WeaponView(props: Props) {
             height={56}
           />
         )}
-        <p className="muted small">
-          Layers, random variations, levels, pitch, delays and filters come from the game's own sound data
-          {burst && rpm ? `, at ${rpm} rounds/min` : ''}. The environment is an approximation of the game's reverb.
-          {last && last.approximations.length > 0 && ` Approximated: ${last.approximations.join(', ')}.`}
+        {recording && <Waveform samples={recording.samples} label="In-game recording" height={56} />}
+        <p className="muted small preview-note">
+          Built from the game's data: every layer, variation, level, pitch, delay, filter, mix category, distance curve, crossfade and
+          envelope{burst && rpm ? `, at ${rpm} rounds/min` : ''}. Approximated: the reverb
+          {last && last.approximations.length > 0 ? `, ${last.approximations.join(', ')}` : ''}.
         </p>
       </div>
 
       <div className="toolbar">
         <label className="small row gap">
           <input type="checkbox" checked={props.sameForEveryone} onChange={(e) => props.onSameForEveryone(e.target.checked)} />
-          Same sound for everyone (also replace the matching part of {audience === 'player' ? 'what others hear' : 'your own gun'})
+          Others hear the same sound
         </label>
       </div>
 
       <div className="table-wrap">
-        {byRole.length === 0 && (
+        {sections.length === 0 && (
           <p className="muted pad">No sounds for this gun were found in your library. Try scanning the game again.</p>
         )}
-        {byGroup.map(({ group, roles }) =>
-          group === 'shooting' ? (
-            roles.map(renderRole)
-          ) : (
-            <details key={group} className="field-group">
-              <summary>
-                {FIELD_GROUP_LABELS[group as FieldGroup]}{' '}
-                <span className="muted small">{roles.map((r) => roleLabel(r.role)).join(' · ')}</span>
-              </summary>
-              {roles.map(renderRole)}
-            </details>
+        {sections.map((section) => {
+          const refs = section.files.map(toRef)
+          return (
+            <section
+              key={section.role}
+              className={`role-group${dropRole === section.role ? ' drop' : ''}`}
+              onDragOver={(e) => {
+                e.preventDefault()
+                setDropRole(section.role)
+              }}
+              onDragLeave={() => setDropRole((r) => (r === section.role ? null : r))}
+              onDrop={(e) => drop(e, refs)}
+            >
+              <div className="role-header">
+                <h3>{section.label}</h3>
+                <span className="muted small role-meaning">{section.meaning}</span>
+                <button className="btn subtle small" onClick={() => props.onSelect(refs, refs[0])}>
+                  Select all
+                </button>
+              </div>
+              <table className="streams">
+                <tbody>
+                  {section.files.map((f) => {
+                    const ref = toRef(f)
+                    const k = refKey(ref)
+                    const t = templates.get(bankKey(f.pack, f.bank))
+                    const summary = t?.summaries.find((s) => s.id === f.streamId)
+                    const a = findAssignment(project, ref)
+                    const src = a?.sourceId ? sources.get(a.sourceId) : undefined
+                    const tagOrig = `orig:${bankKey(f.pack, f.bank)}:${f.streamId}`
+                    const tagNew = `new:${bankKey(f.pack, f.bank)}:${f.streamId}`
+                    return (
+                      <tr
+                        key={k}
+                        className={`${selected.has(k) ? 'selected' : ''}${focus && refKey(focus) === k ? ' focus' : ''}`}
+                        onClick={(e) => click(e, ref)}
+                        onDoubleClick={() => props.onPlayPart(ref, 'original')}
+                        onDrop={(e) => drop(e, selected.has(k) ? selection : [ref])}
+                      >
+                        <td className="col-play">
+                          <button
+                            className={`icon-btn${playing === tagOrig ? ' playing' : ''}`}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              props.onPlayPart(ref, 'original')
+                            }}
+                            aria-label="Play original"
+                            disabled={!summary}
+                          >
+                            {playing === tagOrig ? '■' : '▶'}
+                          </button>
+                        </td>
+                        <td className="desc-cell">
+                          <span className="desc" title={f.text}>
+                            {f.text}
+                          </span>
+                          <span className="muted small mono file-label">
+                            {fileLabel(f)}
+                            {f.alsoRoles.length > 0 && (
+                              <span className="also"> · also used for: {f.alsoRoles.map(roleLabel).join(', ')}</span>
+                            )}
+                          </span>
+                        </td>
+                        <td className={`heard heard-${f.heardBy}`}>{HEARD_BY[f.heardBy]}</td>
+                        <td className="col-num">{summary ? fmtDuration(summary.duration) : t ? '—' : '…'}</td>
+                        <td>
+                          <div className="status-cell">
+                            {!t && <span className="badge warn">bank not loaded</span>}
+                            {a?.action === 'silence' && <span className="badge warn">Silenced</span>}
+                            {a?.action === 'replace' && (
+                              <>
+                                <button
+                                  className={`icon-btn small${playing === tagNew ? ' playing' : ''}`}
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    props.onPlayPart(ref, 'new')
+                                  }}
+                                  aria-label="Play replacement"
+                                >
+                                  {playing === tagNew ? '■' : '▶'}
+                                </button>
+                                <span className="badge accent" title={src?.info.fileName}>
+                                  {src?.info.fileName ?? 'missing audio'}
+                                  {a.shape.channel !== 'mix' ? ` (${a.shape.channel === 'left' ? 'L' : 'R'})` : ''}
+                                </span>
+                              </>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </section>
           )
-        )}
+        })}
       </div>
     </section>
   )

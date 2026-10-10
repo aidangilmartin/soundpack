@@ -17,11 +17,7 @@ export function sanitizePackName(name: string): string {
 /** README.txt placed next to the rebuilt archives. */
 export function installReadme(name: string, archives: string[]): string {
   const files = archives.map((a) =>
-    a === 'WEAPONS_PLAYER.rpf'
-      ? `  ${a}   your own gun's sounds`
-      : a === 'RESIDENT.rpf'
-        ? `  ${a}         shared sounds (other players and NPCs)`
-        : `  ${a}`
+    a === 'WEAPONS_PLAYER.rpf' ? `  ${a}   weapon sound banks` : a === 'RESIDENT.rpf' ? `  ${a}         shared sound banks` : `  ${a}`
   )
   return [
     `${name} — GTA V gun sound pack`,

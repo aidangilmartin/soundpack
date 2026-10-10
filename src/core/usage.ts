@@ -7,7 +7,9 @@
 
 import { fieldInfo, FieldGroup, prettyType, ROLE_KEYS, roleKey } from './fields'
 import { hex8 } from './hash'
-import { prettyWeaponName, type SoundNode } from './weapons'
+import { prettyWeaponName, type NodeCond, type SoundNode } from './weapons'
+
+export type { NodeCond }
 
 export interface MapStream {
   id: number
@@ -29,30 +31,7 @@ export interface MapBank {
   streams: MapStream[]
 }
 
-export interface NodeCond {
-  mode?: number
-  minDistance?: number
-  maxDistance?: number
-  hysteresis?: number
-  distanceVariable?: number
-  crossfadeVariable?: number
-  variable?: number
-  conditionType?: number
-  value?: number
-  loopCount?: number
-  loopCountVariance?: number
-  delay?: number
-  delayVariance?: number
-  innerAngle?: number
-  outerAngle?: number
-  rearAttenuation?: number
-  variables?: { name: number; value: number; variance: number; type: number }[]
-  entries?: number[]
-  minRepeatTime?: number
-}
-
 export interface MapNode extends SoundNode {
-  cond?: NodeCond
   /** [parent sound, slot of this sound in the parent] */
   parents?: [number, number][]
 }

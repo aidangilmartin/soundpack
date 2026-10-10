@@ -45,7 +45,11 @@ public static class GameScan
         List<Commands.BankError> Errors, int Weapons, List<string> Warnings);
 
     sealed record Container(string Pack, string Bank, RpfFile Rpf, RpfFileEntry Entry);
-    sealed record WeaponInfo(string Name, string Group, string Audio, string HumanName, float TimeBetweenShots, string FireType);
+    sealed record WeaponInfo(string Name, string Group, string Audio, string HumanName, float TimeBetweenShots, string FireType, bool Automatic);
+
+    /// <summary>The audio metadata the scan uses: game objects, sounds, curves and categories.</summary>
+    sealed record AudioData(Dictionary<uint, RelData> Game, Dictionary<uint, RelData> Sounds, Dictionary<uint, RelData> Curves,
+        Dictionary<uint, RelData> Categories);
 
     public static ScanResult Run(Options o)
     {
@@ -80,7 +84,8 @@ public static class GameScan
         var text = ReadText(all, allWeapons.Values.Select(w => w.HumanName).Where(n => n.Length > 0).ToHashSet());
 
         Output.Progress("Reading audio metadata");
-        var (game, sounds) = ReadRel(all, warnings);
+        var audio = ReadRel(all, warnings);
+        var (game, sounds) = (audio.Game, audio.Sounds);
 
         Output.Progress("Resolving weapon sounds");
         var nodes = new Dictionary<uint, object>();
@@ -127,6 +132,7 @@ public static class GameScan
                 audio = w.Audio,
                 timeBetweenShots = w.TimeBetweenShots,
                 fireType = w.FireType,
+                automatic = w.Automatic,
                 variants
             });
         }
@@ -147,13 +153,18 @@ public static class GameScan
             }
         }
 
+        Output.Progress("Reading mix categories and curves");
+        var (categories, curves) = PlaybackData(nodes.Keys, audio);
         var index = new
         {
-            version = 2,
+            version = 3,
             game = info,
             weapons = weaponList,
             nodes,
             containers = usedContainers.ToDictionary(h => h.ToString(), h => new { pack = containers[h].Pack, bank = containers[h].Bank }),
+            categories,
+            curves,
+            environment = EnvironmentPresets(game),
             warnings
         };
         Directory.CreateDirectory(outDir);
@@ -280,8 +291,9 @@ public static class GameScan
                         if (name.Length == 0 || audio.Length == 0) continue;
                         float.TryParse(node["TimeBetweenShots"]?.Attributes?["value"]?.Value, System.Globalization.NumberStyles.Float,
                             System.Globalization.CultureInfo.InvariantCulture, out var tbs);
+                        var flags = (node["WeaponFlags"]?.InnerText ?? "").Split((char[])[' ', '\t', '\r', '\n'], StringSplitOptions.RemoveEmptyEntries);
                         weapons[name] = new WeaponInfo(name, group, audio, node["HumanNameHash"]?.InnerText.Trim() ?? "", tbs,
-                            node["FireType"]?.InnerText.Trim() ?? "");
+                            node["FireType"]?.InnerText.Trim() ?? "", flags.Contains("Automatic"));
                     }
                 }
                 catch (Exception e)
@@ -342,7 +354,7 @@ public static class GameScan
         return result;
     }
 
-    static (Dictionary<uint, RelData> Game, Dictionary<uint, RelData> Sounds) ReadRel(List<RpfFile> archives, List<string> warnings)
+    static AudioData ReadRel(List<RpfFile> archives, List<string> warnings)
     {
         // later archives (update, DLC) override earlier ones, as in CodeWalker's GameFileCache
         var files = new Dictionary<string, (RpfFile Rpf, RpfFileEntry Entry)>();
@@ -351,18 +363,28 @@ public static class GameScan
             foreach (var entry in rpf.AllEntries?.OfType<RpfFileEntry>() ?? [])
             {
                 var n = entry.NameLower;
-                if (n.EndsWith(".rel") && (n.Contains(".dat54") || n.Contains(".dat151"))) files[n] = (rpf, entry);
+                if (n.EndsWith(".rel") && (n.Contains(".dat54") || n.Contains(".dat151") || n.Contains(".dat16") || n.Contains(".dat22")))
+                    files[n] = (rpf, entry);
             }
         }
         var game = new Dictionary<uint, RelData>();
         var sounds = new Dictionary<uint, RelData>();
+        var curves = new Dictionary<uint, RelData>();
+        var categories = new Dictionary<uint, RelData>();
         foreach (var (rpf, entry) in files.Values)
         {
             try
             {
                 var rel = new RelFile();
                 rel.Load(rpf.ExtractFile(entry), entry);
-                var target = rel.RelType == RelDatFileType.Dat54DataEntries ? sounds : rel.RelType == RelDatFileType.Dat151 ? game : null;
+                var target = rel.RelType switch
+                {
+                    RelDatFileType.Dat54DataEntries => sounds,
+                    RelDatFileType.Dat151 => game,
+                    RelDatFileType.Dat16Curves => curves,
+                    RelDatFileType.Dat22Categories => categories,
+                    _ => null
+                };
                 if (target == null) continue;
                 foreach (var rd in rel.RelDatas ?? []) target[rd.NameHash] = rd;
             }
@@ -371,7 +393,71 @@ public static class GameScan
                 warnings.Add($"{entry.Path}: {e.Message}");
             }
         }
-        return (game, sounds);
+        return new AudioData(game, sounds, curves, categories);
+    }
+
+    /// <summary>
+    /// The mix categories (with their parent chain) and curves the weapon sounds use: category volume,
+    /// pitch and filters, distance attenuation, crossfade and envelope shapes.
+    /// </summary>
+    static (Dictionary<string, object> Categories, Dictionary<string, object> Curves) PlaybackData(IEnumerable<uint> soundHashes, AudioData a)
+    {
+        // categories only list their children; find each one's parent
+        var parentOf = new Dictionary<uint, uint>();
+        foreach (var (h, rd) in a.Categories)
+            if (rd is Dat22Category c)
+                foreach (var sub in c.SubCategories ?? [])
+                    if (sub != 0) parentOf.TryAdd(sub, h);
+
+        var categories = new Dictionary<string, object>();
+        var curveHashes = new HashSet<uint>();
+        void AddCategory(uint h)
+        {
+            while (h != 0 && !categories.ContainsKey(h.ToString()) && a.Categories.GetValueOrDefault(h) is Dat22Category c)
+            {
+                uint? parent = parentOf.TryGetValue(h, out var p) ? p : null;
+                categories[h.ToString()] = SoundUsage.CategoryJson(c, parent);
+                if (c.LPFDistanceCurve != 0) curveHashes.Add(c.LPFDistanceCurve);
+                if (c.HPFDistanceCurve != 0) curveHashes.Add(c.HPFDistanceCurve);
+                h = parent ?? 0;
+            }
+        }
+        foreach (var h in soundHashes)
+        {
+            if (a.Sounds.GetValueOrDefault(h) is not Dat54Sound s) continue;
+            if (SoundUsage.Header(s.Header).TryGetValue("category", out var cat)) AddCategory((uint)cat);
+            foreach (var c in SoundUsage.CurvesOf(s)) curveHashes.Add(c);
+        }
+        var curves = new Dictionary<string, object>();
+        foreach (var h in curveHashes)
+            if (a.Curves.GetValueOrDefault(h) is Dat16RelData c) curves[h.ToString()] = SoundUsage.CurveJson(c);
+        return (categories, curves);
+    }
+
+    /// <summary>
+    /// Typical indoor and outdoor values from the game data: the most common interior weapon metrics
+    /// (wetness, filter, predelay) and the most common outdoor echo rule. Real values depend on where you are.
+    /// </summary>
+    static object EnvironmentPresets(Dictionary<uint, RelData> game)
+    {
+        var metrics = game.Values.OfType<Dat151InteriorWeaponMetrics>().ToList();
+        var interior = metrics
+            .GroupBy(m => (m.Wetness, m.Visability, m.LPFCutoff, m.PreDelay, m.Hold))
+            .OrderByDescending(g => g.Count())
+            .Select(g => new { wetness = g.Key.Wetness, visibility = g.Key.Visability, lpf = g.Key.LPFCutoff, preDelay = g.Key.PreDelay, hold = g.Key.Hold, count = g.Count(), of = metrics.Count })
+            .FirstOrDefault();
+        var rules = game.Values.OfType<Dat151EnvironmentRule>().Where(r => r.EchoNumber > 0).ToList();
+        var echo = rules
+            .GroupBy(r => (r.EchoDelay, r.EchoDelayVariance, r.EchoAttenuation, r.EchoNumber, r.BaseEchoVolumeModifier, r.ReverbSmall, r.ReverbMedium, r.ReverbLarge))
+            .OrderByDescending(g => g.Count())
+            .Select(g => new
+            {
+                delay = g.Key.EchoDelay, delayVariance = g.Key.EchoDelayVariance, attenuation = g.Key.EchoAttenuation, number = g.Key.EchoNumber,
+                volume = g.Key.BaseEchoVolumeModifier, reverbSmall = g.Key.ReverbSmall, reverbMedium = g.Key.ReverbMedium, reverbLarge = g.Key.ReverbLarge,
+                count = g.Count(), of = rules.Count
+            })
+            .FirstOrDefault();
+        return new { interiorWeapon = interior, outdoorEcho = echo };
     }
 
     /// <summary>Emits the sound graph under `hash` (breadth-first, each node once).</summary>

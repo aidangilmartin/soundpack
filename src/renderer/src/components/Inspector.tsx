@@ -18,8 +18,8 @@ interface Props {
   playing: string | null
   /** Shown above the controls (e.g. what an assignment will also apply to). */
   context?: ReactNode
-  /** What the focused stream is for (from the sound map). */
-  usage?: ReactNode
+  /** A short description of the focused file, shown as the heading (its stream name moves below). */
+  title?: string
   emptyHint?: ReactNode
   onPlay: (ref: StreamRef, which: 'original' | 'new') => void
   onAssign: (sourceId: string, refs: StreamRef[]) => void
@@ -163,8 +163,9 @@ export function Inspector(props: Props) {
       <section className="panel">
         {single && focus ? (
           <>
-            <h3 title={`${focus.pack}/${focus.file} · 0x${hex8(focus.streamId)}`}>{name}</h3>
+            <h3 title={`${focus.pack}/${focus.file} · 0x${hex8(focus.streamId)}`}>{props.title ?? name}</h3>
             <p className="muted small mono">
+              {props.title ? `${name} · ` : ''}
               {focus.pack}/{focus.file}
             </p>
             <Field label="Label" hint="Your own name for this stream, saved on this computer">
@@ -198,8 +199,6 @@ export function Inspector(props: Props) {
         )}
         {props.context}
       </section>
-
-      {props.usage}
 
       <section
         className={`panel drop-zone${dragging ? ' dragging' : ''}`}

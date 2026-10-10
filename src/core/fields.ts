@@ -45,21 +45,19 @@ export function roleKey(field: string): string {
 }
 
 const base: Record<string, FieldInfo> = {
-  fire: { label: 'Gunshot', group: 'shooting', meaning: 'The shot itself: plays every time the gun fires.' },
+  fire: { label: 'Gunshot', group: 'shooting', meaning: 'Single shots: plays every time the gun fires.' },
   auto: {
-    label: 'Automatic fire',
+    label: 'Rapid fire',
     group: 'shooting',
-    meaning: 'Sound for continuous automatic fire, used by some automatic weapons.',
-    inferred: true
+    meaning: 'Used instead of the gunshot for rapid fire on automatic guns (rifles, SMGs).'
   },
   report: {
     label: 'Distant report',
     group: 'shooting',
-    meaning:
-      'A second layer fired with the shot that carries the sound into the distance; the weapon setting shifts its volume and delay against the gunshot.'
+    meaning: 'A loud layer fired with each shot that carries it into the distance; the gun sets its volume and delay against the shot.'
   },
-  echo: { label: 'Echo / tail', group: 'shooting', meaning: 'The echo of the shot off the surroundings.', inferred: true },
-  interior: { label: 'Indoor shot', group: 'shooting', meaning: 'The shot as heard when firing indoors.', inferred: true },
+  echo: { label: 'Echo / tail', group: 'shooting', meaning: 'The echo of the shot in reflective places such as tunnels.' },
+  interior: { label: 'Indoor shot', group: 'shooting', meaning: 'The shot when firing indoors, softer than outside.' },
   suppressed: { label: 'Suppressed shot', group: 'shooting', meaning: 'The shot when a suppressor is fitted.' },
   suppressedEcho: { label: 'Suppressed echo', group: 'shooting', meaning: 'The echo of a suppressed shot.', inferred: true },
   shellCasing: { label: 'Shell casings', group: 'casings', meaning: 'Spent casings hitting the ground after a shot.' },
@@ -95,7 +93,12 @@ const base: Record<string, FieldInfo> = {
     meaning: 'A sound set of extras specific to this weapon (spin-up, charge-up…).',
     inferred: true
   },
-  bankSound: { label: 'Bank sound', group: 'other', meaning: 'Sound used to get the weapon’s sound bank loaded.', inferred: true },
+  bankSound: {
+    label: 'Bank sound',
+    group: 'other',
+    meaning: 'Use unknown; community notes suggest the first-person shot.',
+    inferred: true
+  },
 
   swipeSound: { label: 'Melee swing', group: 'melee', meaning: 'Swinging the weapon in melee.', inferred: true },
   generalStrikeSound: { label: 'Melee hit (objects)', group: 'melee', meaning: 'Hitting something with the weapon.', inferred: true },
@@ -123,7 +126,7 @@ for (const [prefix, speed] of [
     base[`${prefix}${field}Sound`] = {
       label: `${speed} ${what}`,
       group: 'slowmo',
-      meaning: `The ${what} while the game runs in ${speed.toLowerCase()} (e.g. a special ability).`,
+      meaning: `The ${what} in ${speed.toLowerCase()} (special abilities, the Rockstar Editor).`,
       inferred: true
     }
     base[`${prefix}${field}SoundPresuck`] = {

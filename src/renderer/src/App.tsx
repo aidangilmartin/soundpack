@@ -21,6 +21,7 @@ import {
   type Project,
   type StreamRef
 } from '@core/project'
+import { gunFiles } from '@core/describe'
 import { codeOf, idCodes, type IdCode } from '@core/idpack'
 import { bankSummary, stereoPairs, streamSummary, streamUsage, type BankSummary, type SoundMap, type StreamUsage } from '@core/usage'
 import { expandToAudiences, weaponParts } from '@core/weapons'
@@ -35,7 +36,6 @@ import { IdPackDialog } from './components/IdPackDialog'
 import { Inspector } from './components/Inspector'
 import { Setup } from './components/Setup'
 import { Sidebar } from './components/Sidebar'
-import { UsagePanel } from './components/UsagePanel'
 import { WeaponList } from './components/WeaponList'
 import { WeaponView } from './components/WeaponView'
 import {
@@ -52,6 +52,8 @@ import {
 
 type Toast = { kind: 'info' | 'error'; text: string }
 type Tab = 'weapons' | 'banks'
+
+const NO_NAMES: Record<string, string> = {}
 
 const AUDIO_RE = /\.(wav|mp3|ogg|flac|m4a|aac|opus|webm)$/i
 
@@ -134,7 +136,10 @@ export function App() {
     },
     [soundMap, usageCache]
   )
-  const weaponNames = useMemo(() => new Set(index?.weapons.map((w) => w.name) ?? []), [index])
+  const gunSections = useMemo(
+    () => (index && weapon ? gunFiles(index, weapon, soundMap?.names ?? NO_NAMES) : []),
+    [index, weapon, soundMap]
+  )
   const items = useMemo(() => bankItems(library, project, summaries), [library, project, summaries])
   const activeItem = items.find((i) => i.key === activeKey) ?? null
   const activeTemplate = activeKey ? (loaded.get(activeKey) ?? null) : null
@@ -263,12 +268,6 @@ export function App() {
     select([ref], ref)
     if (!library.some((t) => bankKey(t.pack, t.file) === code.bank)) void loadFromGame(code.bank)
     window.setTimeout(() => document.getElementById(`row-${code.id}`)?.scrollIntoView({ block: 'center' }), 300)
-  }
-
-  const openWeapon = (name: string): void => {
-    setTab('weapons')
-    setWeaponName(name)
-    select([], null)
   }
 
   const importAwc = async (paths?: string[]): Promise<void> => handleReport(await window.api.importAwcFiles(paths))
@@ -521,7 +520,19 @@ export function App() {
 
   const bankSelection = activeItem ? selection.filter((r) => bankKey(r.pack, r.file) === activeItem.key) : []
   const usageRef = focus ?? selection[0] ?? null
-  const focusUsage = usageRef ? usageOf(usageRef.pack, usageRef.file, usageRef.streamId) : null
+  // the focused file's short description: its part of the gun, or what the game data uses it for
+  const focusTitle = ((): string | undefined => {
+    if (!usageRef) return undefined
+    if (tab === 'weapons') {
+      for (const s of gunSections) {
+        const f = s.files.find((x) => bankKey(x.pack, x.bank) === bankKey(usageRef.pack, usageRef.file) && x.streamId === usageRef.streamId)
+        if (f) return `${s.label}: ${f.text}`
+      }
+      return undefined
+    }
+    const u = usageOf(usageRef.pack, usageRef.file, usageRef.streamId)
+    return u ? streamSummary(u) || undefined : undefined
+  })()
   const inspector = (
     <Inspector
       templates={loaded}
@@ -539,19 +550,7 @@ export function App() {
           </p>
         ) : undefined
       }
-      usage={
-        soundMap && focusUsage && usageRef ? (
-          <UsagePanel
-            key={refKey(usageRef)}
-            map={soundMap}
-            usage={focusUsage}
-            code={codes ? codeOf(codes, bankKey(usageRef.pack, usageRef.file), usageRef.streamId) : undefined}
-            weaponNames={weaponNames}
-            currentWeapon={tab === 'weapons' ? weaponName : null}
-            onOpenWeapon={openWeapon}
-          />
-        ) : undefined
-      }
+      title={selection.length === 1 ? focusTitle : undefined}
       emptyHint={
         tab === 'weapons' ? (
           <>
@@ -663,7 +662,7 @@ export function App() {
               ensureBank={ensureBank}
               project={project}
               sources={sources}
-              labels={labels}
+              names={soundMap?.names ?? NO_NAMES}
               selection={selection}
               focus={focus}
               playing={playing}
@@ -673,10 +672,6 @@ export function App() {
               onPlayPart={play}
               onDropFiles={(files, refs) => void dropFilesOnStreams(files, refs)}
               onError={(m) => notify('error', m)}
-              usageSummary={(r) => {
-                const u = usageOf(r.pack, r.file, r.streamId)
-                return u ? streamSummary(u) : ''
-              }}
             />
           ) : (
             <section className="bank-view empty-state muted">Pick a gun on the left.</section>

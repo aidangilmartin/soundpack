@@ -19,15 +19,9 @@ export function HelpDialog({ onClose }: Props) {
             the game folder changes. Run <b>Scan game again</b> after a game update.
           </li>
           <li>
-            <b>Pick a gun.</b> Its sounds are grouped the way the game uses them: the gunshot, the distant report, the echo/tail, suppressed
-            shots and shell casings, then handling, melee and slow-motion sounds. <b>Your gun</b> is what you hear; <b>Others hear</b> is
-            what other players and NPCs hear.
-          </li>
-          <li>
-            <b>See what every sound is for.</b> Select any sound to see each way the game plays it, traced through the game's audio data:
-            which gun (or explosion, animation…) triggers it, which part it is, and when — close or distant, which random variation and how
-            often, left or right channel. The Sound banks tab lists every bank of both archives with a “Used for” column; filter it by what
-            you're after (e.g. “echo”) or show the unused sounds.
+            <b>Pick a gun.</b> You see every file it uses, under the part it belongs to (gunshot, distant report, echo, reload…), each with
+            a short description of what it is — “Variation 2 of 3 (40% of shots)”, “Far away”, “Left channel” — and who hears it: you,
+            others (other players and NPCs) or everyone. It all comes from the game's own audio data.
           </li>
           <li>
             <b>Confirm it in game.</b> <b>Identify in game…</b> builds a test pack where every sound says its code, like “pistol 4”. Install
@@ -36,16 +30,19 @@ export function HelpDialog({ onClose }: Props) {
           </li>
           <li>
             <b>Replace sounds.</b> Select a part (or “Select all”), add a WAV/MP3/OGG/FLAC and assign it — or drop the file straight onto a
-            part. With “Same sound for everyone” on, other players hear your new sound too. Trim, fade, normalize and resample on the right.
+            part. With “Others hear the same sound” on, the matching files others hear change too. Trim, fade, normalize and resample on the
+            right.
           </li>
           <li>
-            <b>Preview.</b> ▶ Original and ▶ Yours play the full gunshot the way the game builds it: every layer, random variation, level,
-            pitch, delay and filter from the game's sound data, single or as a burst at the gun's fire rate. The environment
-            (outdoors/indoors) is an approximation of the game's reverb, so the preview is close but not identical to in-game.
+            <b>Preview.</b> ▶ Original and ▶ Yours build the shot from the game's sound data: every layer, random variation, level, pitch,
+            delay, filter, mix category, distance curve, crossfade and envelope, single or in a burst (full auto uses the gun's rapid fire
+            sound). Pick how far away you hear it, outdoors, indoors or in a tunnel, and who fires it. Some things only the game engine
+            decides (its reverb, where echoes come from, occlusion); the preview says what it approximated. To check, use{' '}
+            <b>Compare with in-game recording…</b> with a recording of the real gun.
           </li>
           <li>
             <b>Export.</b> The app rebuilds the game's sound archives with your sounds — <span className="mono">WEAPONS_PLAYER.rpf</span>{' '}
-            (your gun) and <span className="mono">RESIDENT.rpf</span> (other players and NPCs) — into a folder you choose. Drag them into{' '}
+            and <span className="mono">RESIDENT.rpf</span> — into a folder you choose. Drag them into{' '}
             <span className="mono">%localappdata%\FiveM\FiveM.app\mods</span> for FiveM, or{' '}
             <span className="mono">GTA V\mods\x64\audio\sfx</span> for single player with OpenIV. Don't overwrite the originals in the game
             folder.
