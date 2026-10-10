@@ -68,6 +68,8 @@ npm run test:e2e     # builds, then runs the Electron smoke test (Playwright); u
 npm run dist:win     # Windows installer + portable exe in release/
 ```
 
+Electron (v42+) no longer downloads its binary during install, so this project runs Electron's `install-electron` command on `npm install` and before `npm run dev`/`npm start`. If you still see `Error: Electron uninstall`, run `npx install-electron` once, or delete `node_modules/electron` and reinstall.
+
 To run the optional real-file round-trip tests, point `AWC_SAMPLES_DIR` at a folder of `.awc` files. These files are never committed.
 
 ### Layout
