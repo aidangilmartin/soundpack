@@ -49,7 +49,8 @@ const base: Record<string, FieldInfo> = {
   auto: {
     label: 'Rapid fire',
     group: 'shooting',
-    meaning: 'Used instead of the gunshot for rapid fire on automatic guns (rifles, SMGs).'
+    meaning:
+      'The shot of automatic guns (rifles, SMGs, MGs): plays from the first shot, repeats while the trigger is held and ends with a tail. Their gunshot (FireSound) is usually one sound shared by all of them.'
   },
   report: {
     label: 'Distant report',

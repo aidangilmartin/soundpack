@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { joaat } from './hash'
-import { envelopeAutomation, newPlanState, planBurst, planShot, seededRng, shotRoles, type Voice } from './soundgraph'
+import { envelopeAutomation, newPlanState, planFiring, planShot, repeatsItself, seededRng, shotRoles, type Voice } from './soundgraph'
 import type { SoundNode, WeaponIndex } from './weapons'
 import { fixtureIndex } from './weapons.fixture'
 
@@ -50,7 +50,7 @@ describe('planShot', () => {
   })
 
   it('spaces bursts at the fire rate', () => {
-    const voices = planBurst(index, player, newPlanState(seededRng(3)), 3, 0.15, ['fire'])
+    const voices = planFiring(index, index.weapons[0], player, newPlanState(seededRng(3)), { shots: 3, roles: ['fire'] })
     const starts = voices.filter((v) => v.file === 0x0aa87351).map((v) => v.time)
     expect(starts.map((t) => Math.round(t * 1000))).toEqual([10, 160, 310])
   })
@@ -254,14 +254,97 @@ describe('shot parts by environment', () => {
     expect(shotRoles(player, 'outdoor')).toEqual(['fire', 'report', 'echo', 'shellCasing'])
     expect(shotRoles(player, 'interior')).toEqual(['interior', 'report', 'shellCasing'])
   })
+})
 
-  it("plays an automatic gun's AutoSound in a burst", () => {
-    const i2 = withNodes({ autoroot: { type: 'MultitrackSound', header: {}, children: [joaat('pistol_body_b')] } })
-    const v = { ...i2.weapons[0].variants[0], roles: { ...i2.weapons[0].variants[0].roles, auto: joaat('autoroot') } }
-    const burst = planBurst(i2, v, newPlanState(seededRng(2)), 3, 0.1, ['fire'], undefined, { automatic: true })
-    expect(burst.every((x) => x.role === 'auto')).toBe(true)
-    expect(
-      planBurst(i2, v, newPlanState(seededRng(2)), 3, 0.1, ['fire'], undefined, { automatic: false }).every((x) => x.role === 'fire')
-    ).toBe(true)
+describe('automatic guns', () => {
+  /**
+   * Shaped like the game's data: every player automatic gun has the same FireSound (generic layers in
+   * RESIDENT), and its own shot in AutoSound, a retriggered sound with a start, a repeat and a tail.
+   */
+  const simple = (file: number, container = 'weapons_player/smg_smg'): SoundNode => ({
+    type: 'SimpleSound',
+    header: {},
+    children: [],
+    simple: { container: joaat(container), file }
+  })
+  const retriggered = (prefix: string, delay: number): SoundNode => ({
+    type: 'RetriggeredOverlappedSound',
+    header: {},
+    children: [joaat(`${prefix}_start`), joaat(`${prefix}_shot`), joaat(`${prefix}_tail`)],
+    cond: { loopCount: -1, delay }
+  })
+  const idx = withNodes({
+    shared_fire: { type: 'WrapperSound', header: {}, children: [joaat('shared_layer')] },
+    shared_layer: simple(0x1e0651de, 'resident/weapons'),
+    silence: { type: 'WrapperSound', header: {}, children: [] },
+    smg_auto: retriggered('smg', 75),
+    smg_start: simple(0x0c64bf88),
+    smg_shot: simple(0x06ef0ea5),
+    smg_tail: simple(0x141616e8, 'resident/weapons'),
+    rifle_auto: retriggered('rifle', 77),
+    rifle_start: simple(0x11111111, 'weapons_player/ar_assaultrifle'),
+    rifle_shot: simple(0x22222222, 'weapons_player/ar_assaultrifle'),
+    rifle_tail: simple(0x33333333, 'weapons_player/ar_assaultrifle'),
+    npc_auto: { type: 'RandomizedSound', header: {}, children: [joaat('npc_a'), joaat('npc_b')] },
+    npc_a: simple(0x0aaaaaaa, 'resident/weapons'),
+    npc_b: simple(0x0bbbbbbb, 'resident/weapons')
+  })
+  const base = idx.weapons[0].variants[0]
+  const smg = { automatic: true, timeBetweenShots: 0.08 }
+  const variant = (fire: string, auto: string) => ({ ...base, roles: { fire: joaat(fire), auto: joaat(auto) } })
+  const fire = (weapon: typeof smg, v: ReturnType<typeof variant>, shots = 1) => {
+    const state = newPlanState(seededRng(4))
+    return { voices: planFiring(idx, weapon, v, state, { shots, roles: ['fire'] }), notes: [...state.approximations] }
+  }
+
+  it("plays the gun's own AutoSound for a single shot: start and tail, with the shared FireSound", () => {
+    const { voices, notes } = fire(smg, variant('shared_fire', 'smg_auto'))
+    expect(voices.map((v) => [v.role, v.file, Math.round(v.time * 1000)])).toEqual([
+      ['auto', 0x0c64bf88, 0],
+      ['auto', 0x141616e8, 75],
+      ['fire', 0x1e0651de, 0]
+    ])
+    expect(notes.some((n) => n.includes('FireSound'))).toBe(true)
+  })
+
+  it('sounds different for two guns that share their FireSound', () => {
+    const files = (auto: string) => fire(smg, variant('shared_fire', auto)).voices.map((v) => v.file)
+    expect(files('smg_auto')).not.toEqual(files('rifle_auto'))
+  })
+
+  it('keeps a retriggered AutoSound going for a burst at its own delay, the rest with every shot', () => {
+    const { voices } = fire(smg, variant('shared_fire', 'smg_auto'), 3)
+    const auto = voices.filter((v) => v.role === 'auto').map((v) => [v.file, Math.round(v.time * 1000)])
+    expect(auto).toEqual([
+      [0x0c64bf88, 0],
+      [0x06ef0ea5, 75],
+      [0x06ef0ea5, 150],
+      [0x141616e8, 225]
+    ])
+    expect(voices.filter((v) => v.role === 'fire').map((v) => Math.round(v.time * 1000))).toEqual([0, 80, 160])
+  })
+
+  it('triggers a one-shot AutoSound (NPC style) with every shot, and plays nothing for silence', () => {
+    const { voices, notes } = fire(smg, variant('silence', 'npc_auto'), 3)
+    expect(voices.map((v) => [v.role, Math.round(v.time * 1000)])).toEqual([
+      ['auto', 0],
+      ['auto', 80],
+      ['auto', 160]
+    ])
+    expect(notes.some((n) => n.includes('FireSound'))).toBe(false)
+  })
+
+  it('ignores AutoSound on guns that are not automatic, and with a suppressor', () => {
+    const single = { automatic: false, timeBetweenShots: 0.3 }
+    expect(fire(single, variant('shared_fire', 'smg_auto')).voices.every((v) => v.role === 'fire')).toBe(true)
+    const state = newPlanState(seededRng(4))
+    const suppressed = { ...base, roles: { suppressed: joaat('shared_fire'), auto: joaat('smg_auto') } }
+    expect(planFiring(idx, smg, suppressed, state, { roles: ['suppressed'] }).every((v) => v.role === 'suppressed')).toBe(true)
+  })
+
+  it('finds sounds that repeat themselves', () => {
+    expect(repeatsItself(idx, joaat('smg_auto'))).toBe(true)
+    expect(repeatsItself(idx, joaat('npc_auto'))).toBe(false)
+    expect(repeatsItself(idx, undefined)).toBe(false)
   })
 })

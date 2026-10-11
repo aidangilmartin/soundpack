@@ -848,6 +848,9 @@ fieldset.scope {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.file-label .shared-with {
+  color: var(--warn);
+}
 .heard {
   white-space: nowrap;
   font-size: 12px;

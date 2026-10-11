@@ -19,14 +19,20 @@ export function fixtureBank(): Uint8Array {
 
 /**
  * Builds a fake GTA V folder: OPEN (unencrypted) archives holding AWC-encrypted banks
- * (weapons_player/ptl_pistol, resident/weapons, resident/explosions), audio metadata
- * (tests/fixtures/game/*.rel.xml), weapons.meta and a weapon clip dictionary. Returns the game folder.
+ * (weapons_player/ptl_pistol, resident/weapons, resident/explosions, and weapons_player/smg_smg
+ * with `smgBank`), audio metadata (tests/fixtures/game/*.rel.xml), weapons.meta and a weapon clip
+ * dictionary. Returns the game folder.
  */
-export async function makeFakeGame(dir: string, opts: { key?: string; wholeFile?: boolean; metadata?: boolean } = {}): Promise<string> {
+export async function makeFakeGame(
+  dir: string,
+  opts: { key?: string; wholeFile?: boolean; metadata?: boolean; smgBank?: boolean } = {}
+): Promise<string> {
   const bank = join(dir, 'ptl_pistol.awc')
+  const smg = join(dir, 'smg_smg.awc')
   const shared = join(dir, 'weapons.awc')
   const explosions = join(dir, 'explosions.awc')
   writeFileSync(bank, fixtureBank())
+  writeFileSync(smg, fixtureBank())
   writeFileSync(shared, fixtureBank())
   writeFileSync(explosions, fixtureBank())
   const game = join(dir, 'Grand Theft Auto V')
@@ -55,6 +61,7 @@ export async function makeFakeGame(dir: string, opts: { key?: string; wholeFile?
     ...(opts.wholeFile ? ['--whole-file'] : []),
     '--weapons-player-awc',
     bank,
+    ...(opts.smgBank ? ['--weapons-player-awc', smg] : []),
     '--resident-awc',
     shared,
     '--resident-awc',

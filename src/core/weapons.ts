@@ -255,6 +255,20 @@ export function leaves(index: WeaponIndex, root: number): { container: number; f
   return out
 }
 
+/** Whether a sound plays any wave ("silence" and "null_sound" are empty wrappers). */
+export function hasSound(index: WeaponIndex, hash: number | undefined): boolean {
+  return !!hash && leaves(index, hash).length > 0
+}
+
+/**
+ * Automatic guns keep their own shot in AutoSound (rapid fire): for most of them the FireSound is one
+ * sound shared by every automatic gun, and NPC versions set it to silence. Gated on the weapon's
+ * Automatic flag, as some single-shot guns fill AutoSound in too (often with their FireSound).
+ */
+export function usesAutoSound(index: WeaponIndex, weapon: Pick<Weapon, 'automatic'>, variant: WeaponVariant): boolean {
+  return !!weapon.automatic && hasSound(index, variant.roles.auto)
+}
+
 export interface WeaponPart {
   role: Role
   pack: string

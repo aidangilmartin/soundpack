@@ -6,7 +6,18 @@
 
 import { hex8 } from './hash'
 import { WEAPON_FIELDS } from './fields'
-import { orderedRoles, roleLabel, variantAudience, type Role, type SoundNode, type Weapon, type WeaponIndex } from './weapons'
+import {
+  orderedRoles,
+  roleLabel,
+  usesAutoSound,
+  variantAudience,
+  weaponLabel,
+  weaponParts,
+  type Role,
+  type SoundNode,
+  type Weapon,
+  type WeaponIndex
+} from './weapons'
 
 export type HeardBy = 'you' | 'others' | 'everyone'
 
@@ -19,6 +30,8 @@ export interface GunFile {
   heardBy: HeardBy
   /** Other parts of this gun that play the same file. */
   alsoRoles: Role[]
+  /** Other guns that use the same file (changing it changes them too). */
+  sharedWith: string[]
 }
 
 export interface GunSection {
@@ -67,7 +80,7 @@ export function shortStep(n: SoundNode, slot: number, nameOf: (hash: number) => 
     case 'SequentialOverlapSound':
       return count > 1 ? `Part ${slot + 1} of ${count}` : null
     case 'RetriggeredOverlappedSound':
-      return ['Start', 'Repeating part', 'End'][slot] ?? null
+      return ['First shot', 'Each further shot (trigger held)', 'Tail when you let go'][slot] ?? null
     case 'OnStopSound':
       return slot === 1 ? 'When the sound stops' : slot === 2 ? 'When it finishes' : null
     case 'WrapperSound':
@@ -104,6 +117,51 @@ function leafPaths(index: WeaponIndex, root: number, nameOf: (h: number) => stri
   return out
 }
 
+const fileKey = (pack: string, bank: string, streamId: number): string => `${pack}/${bank}:${streamId}`
+
+const gunsByFile = new WeakMap<WeaponIndex, Map<string, Set<string>>>()
+
+/** Which guns use each file, any part, any variant (worked out once per index). */
+function gunsUsing(index: WeaponIndex): Map<string, Set<string>> {
+  let map = gunsByFile.get(index)
+  if (map) return map
+  map = new Map()
+  for (const w of index.weapons) {
+    for (const v of w.variants) {
+      for (const p of weaponParts(index, v)) {
+        const k = fileKey(p.pack, p.bank, p.streamId)
+        map.set(k, (map.get(k) ?? new Set()).add(w.name))
+      }
+    }
+  }
+  gunsByFile.set(index, map)
+  return map
+}
+
+const AUTO_GUNSHOT = "This gun's own shot: the first shot, a repeat for each further shot while the trigger is held, then a tail."
+
+/** How a part reads for this gun: automatic guns keep their shot in AutoSound, and their FireSound is often shared. */
+function sectionText(role: Role, automatic: boolean, files: GunFile[]): { label: string; meaning: string; inferred: boolean } {
+  const info = WEAPON_FIELDS[role] ?? { meaning: '', inferred: true }
+  if (automatic && role === 'auto') return { label: 'Gunshot', meaning: AUTO_GUNSHOT, inferred: false }
+  if (automatic && role === 'fire') {
+    const others = new Set(files.flatMap((f) => f.sharedWith))
+    const shared = files.length > 0 && files.every((f) => f.sharedWith.length > 0)
+    return {
+      label: shared ? 'Shared shot layer' : 'Shot layer',
+      meaning:
+        (shared
+          ? `The same sound for this gun and ${others.size} other gun${others.size === 1 ? '' : 's'}; changing it changes all of them. `
+          : '') + "Played with each shot on top of the gun's own sound.",
+      inferred: true
+    }
+  }
+  return { label: roleLabel(role), meaning: info.meaning, inferred: !!info.inferred }
+}
+
+/** Stands for "the whole <part>" until the part's name for this gun is known. */
+const WHOLE = '\u0000whole'
+
 const sentence = (parts: string[]): string =>
   parts.map((p, i) => (i === 0 ? p.charAt(0).toUpperCase() + p.slice(1) : p.charAt(0).toLowerCase() + p.slice(1))).join(', ')
 
@@ -113,6 +171,9 @@ const sentence = (parts: string[]): string =>
  */
 export function gunFiles(index: WeaponIndex, weapon: Weapon, names: Record<string, string> = {}): GunSection[] {
   const nameOf = (h: number): string | null => (h ? (names[String(h >>> 0)] ?? null) : null)
+  const automatic = weapon.variants.some((v) => usesAutoSound(index, weapon, v))
+  const users = gunsUsing(index)
+  const labelOf = new Map(index.weapons.map((w) => [w.name, weaponLabel(w)]))
   const sections = new Map<Role, Map<string, GunFile & { texts: Set<string>; audiences: Set<'you' | 'others'> }>>()
   const rolesOfFile = new Map<string, Set<Role>>()
   for (const v of weapon.variants) {
@@ -121,7 +182,7 @@ export function gunFiles(index: WeaponIndex, weapon: Weapon, names: Record<strin
       for (const leaf of leafPaths(index, v.roles[role], nameOf)) {
         const c = index.containers[String(leaf.container)]
         if (!c) continue
-        const key = `${c.pack}/${c.bank}:${leaf.file}`
+        const key = fileKey(c.pack, c.bank, leaf.file)
         rolesOfFile.set(key, (rolesOfFile.get(key) ?? new Set()).add(role))
         const files = sections.get(role) ?? new Map()
         sections.set(role, files)
@@ -132,31 +193,32 @@ export function gunFiles(index: WeaponIndex, weapon: Weapon, names: Record<strin
           text: '',
           heardBy: audience,
           alsoRoles: [],
+          sharedWith: [],
           texts: new Set<string>(),
           audiences: new Set<'you' | 'others'>()
         }
-        f.texts.add(leaf.steps.length ? sentence(leaf.steps) : `The whole ${roleLabel(role).toLowerCase()}`)
+        f.texts.add(leaf.steps.length ? sentence(leaf.steps) : WHOLE)
         f.audiences.add(audience)
         files.set(key, f)
       }
     }
   }
-  return orderedRoles(sections.keys()).map((role) => {
-    const info = WEAPON_FIELDS[role] ?? { meaning: '', inferred: true }
-    return {
-      role,
-      label: roleLabel(role),
-      meaning: info.meaning,
-      inferred: !!info.inferred,
-      files: [...sections.get(role)!.entries()].map(([key, f]) => ({
-        pack: f.pack,
-        bank: f.bank,
-        streamId: f.streamId,
-        text: [...f.texts].join(' / '),
-        heardBy: f.audiences.size > 1 ? 'everyone' : [...f.audiences][0],
-        alsoRoles: [...(rolesOfFile.get(key) ?? [])].filter((r) => r !== role)
-      }))
-    }
+  const roles = orderedRoles(sections.keys())
+  // an automatic gun's own shot is its rapid-fire sound: show it first
+  if (automatic && roles.includes('auto')) roles.unshift(...roles.splice(roles.indexOf('auto'), 1))
+  return roles.map((role) => {
+    const files: GunFile[] = [...sections.get(role)!.entries()].map(([key, f]) => ({
+      pack: f.pack,
+      bank: f.bank,
+      streamId: f.streamId,
+      text: [...f.texts].join(' / '),
+      heardBy: f.audiences.size > 1 ? 'everyone' : [...f.audiences][0],
+      alsoRoles: [...(rolesOfFile.get(key) ?? [])].filter((r) => r !== role),
+      sharedWith: [...(users.get(key) ?? [])].filter((n) => n !== weapon.name).map((n) => labelOf.get(n) ?? n)
+    }))
+    const text = sectionText(role, automatic, files)
+    const whole = `The whole ${text.label.toLowerCase()}`
+    return { role, ...text, files: files.map((f) => ({ ...f, text: f.text.replaceAll(WHOLE, whole) })) }
   })
 }
 

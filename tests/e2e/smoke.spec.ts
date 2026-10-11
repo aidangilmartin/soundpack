@@ -20,7 +20,7 @@ test.skip(!existsSync(bridgeExe), 'run npm run build:bridge first')
 
 test('first launch: find GTA V, edit a gun, preview it and export', async () => {
   const work = mkdtempSync(join(tmpdir(), 'gsm-e2e-'))
-  const game = await makeFakeGame(work, { key: testAwcKey })
+  const game = await makeFakeGame(work, { key: testAwcKey, smgBank: true })
   const shot = Int16Array.from({ length: 24000 }, (_, i) => Math.round(Math.sin(i / 3) * 20000 * Math.exp(-i / 4000)))
   const wavPath = join(work, 'my_shot.wav')
   writeFileSync(wavPath, encodeWav16(shot, 48000))
@@ -93,6 +93,22 @@ test('first launch: find GTA V, edit a gun, preview it and export', async () => 
   await expect(page.locator('.preview-bar .waveform-label', { hasText: 'Yours' })).toBeVisible()
   await expect(page.locator('.bank-item[title="WEAPON_PISTOL"]')).toContainText('4 changed')
   if (shots) await page.screenshot({ path: join(shots, '2-weapon.png') })
+
+  // an automatic gun's own shot is its rapid-fire sound: listed first and played by the preview
+  await guns.getByRole('button', { name: 'SMG' }).click()
+  await expect(page.getByRole('heading', { name: 'SMG', exact: true })).toBeVisible()
+  await expect(page.locator('.role-group h3').first()).toHaveText('Gunshot')
+  const smgShot = page.locator('.role-group').first()
+  await expect(smgShot).toContainText('First shot')
+  await expect(smgShot).toContainText('Tail when you let go')
+  await expect(page.getByRole('heading', { name: 'Shot layer', exact: true })).toBeVisible()
+  await expect(page.locator('.role-group').nth(1)).toContainText('The whole shot layer')
+  await page.getByRole('button', { name: 'Single' }).click()
+  await page.getByRole('button', { name: '▶ Original' }).click()
+  await expect(page.locator('.preview-bar .waveform-label', { hasText: 'Original' })).toBeVisible()
+  await expect(page.locator('.preview-note')).toContainText('automatic guns also play their FireSound')
+  await expect(page.getByRole('button', { name: 'Full auto ×5' })).toBeVisible()
+  if (shots) await page.screenshot({ path: join(shots, '6-smg.png') })
 
   // export rebuilt WEAPONS_PLAYER.rpf and RESIDENT.rpf
   await page.getByRole('button', { name: /^Export \(/ }).click()

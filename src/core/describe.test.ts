@@ -63,6 +63,51 @@ describe('gunFiles', () => {
   })
 })
 
+describe('gunFiles for automatic guns', () => {
+  /** Two automatic guns shaped like the game's: one shared FireSound, each gun's own shot in AutoSound. */
+  function autoIndex() {
+    const index = fixtureIndex()
+    Object.assign(index.containers, {
+      [h('weapons_player/smg_smg')]: { pack: 'weapons_player', bank: 'smg_smg.awc' },
+      [h('weapons_player/ar_assaultrifle')]: { pack: 'weapons_player', bank: 'ar_assaultrifle.awc' }
+    })
+    Object.assign(index.nodes, {
+      [h('shared_fire')]: simple('resident/weapons', 0x1e0651de),
+      [h('smg_auto')]: { type: 'RetriggeredOverlappedSound', header: {}, children: [h('smg_start'), h('smg_shot'), h('smg_tail')] },
+      [h('smg_start')]: simple('weapons_player/smg_smg', 0x0c64bf88),
+      [h('smg_shot')]: simple('weapons_player/smg_smg', 0x06ef0ea5),
+      [h('smg_tail')]: simple('weapons_player/smg_smg', 0x141616e8),
+      [h('rifle_auto')]: simple('weapons_player/ar_assaultrifle', 0x01111111)
+    })
+    const smg = index.weapons[1]
+    smg.automatic = true
+    smg.variants[0].roles = { fire: h('shared_fire'), auto: h('smg_auto') }
+    index.weapons.push({
+      ...smg,
+      name: 'WEAPON_ASSAULTRIFLE',
+      displayName: 'Assault Rifle',
+      variants: [{ ...smg.variants[0], roles: { fire: h('shared_fire'), auto: h('rifle_auto') } }]
+    })
+    return { index, smg }
+  }
+
+  it("puts the gun's own rapid-fire shot first and marks the shared gunshot", () => {
+    const { index, smg } = autoIndex()
+    const sections = gunFiles(index, smg)
+    expect(sections.map((s) => s.label)).toEqual(['Gunshot', 'Shared shot layer'])
+    expect(sections[0].files.map((f) => f.text)).toEqual(['First shot', 'Each further shot (trigger held)', 'Tail when you let go'])
+    expect(sections[0].files.every((f) => f.sharedWith.length === 0)).toBe(true)
+    expect(sections[1].meaning).toMatch(/this gun and 1 other gun; changing it changes all of them/)
+    expect(sections[1].files[0]).toMatchObject({ text: 'The whole shared shot layer', sharedWith: ['Assault Rifle'] })
+  })
+
+  it('keeps the usual order for guns that are not automatic', () => {
+    const { index, smg } = autoIndex()
+    const sections = gunFiles(index, { ...smg, automatic: false })
+    expect(sections.map((s) => s.label)).toEqual(['Gunshot', 'Rapid fire'])
+  })
+})
+
 describe('shortStep', () => {
   const names = (n: Record<number, string>) => (x: number) => n[x] ?? null
   it('says what an If branch means, naming the variable when it is known', () => {
@@ -74,7 +119,11 @@ describe('shortStep', () => {
 
   it('names repeating parts and leaves plain wrappers out', () => {
     const r: SoundNode = { type: 'RetriggeredOverlappedSound', header: {}, children: [1, 2, 3] }
-    expect([0, 1, 2].map((i) => shortStep(r, i, () => null))).toEqual(['Start', 'Repeating part', 'End'])
+    expect([0, 1, 2].map((i) => shortStep(r, i, () => null))).toEqual([
+      'First shot',
+      'Each further shot (trigger held)',
+      'Tail when you let go'
+    ])
     expect(shortStep({ type: 'EnvelopeSound', header: {}, children: [1] }, 0, () => null)).toBeNull()
   })
 })

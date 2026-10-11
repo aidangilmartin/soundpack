@@ -1,6 +1,6 @@
 import { curveIsExact, defaultDistanceAttenuation, evalCurve } from './curves'
 import type { Curve, EnvelopeSettings, MixCategory, Role, SoundHeader, Weapon, WeaponIndex, WeaponVariant } from './weapons'
-import { node } from './weapons'
+import { hasSound, node, usesAutoSound } from './weapons'
 
 /**
  * Turns the game's sound graph for one gunshot into concrete "voices" (which wave, when, how loud,
@@ -511,30 +511,55 @@ function echoes(ctx: Ctx, root: number, acc: Acc): void {
   }
 }
 
+/** Whether a sound keeps itself going for a whole burst (a RetriggeredOverlappedSound under it). */
+export function repeatsItself(index: WeaponIndex, hash: number | undefined): boolean {
+  const seen = new Set<number>()
+  const find = (h: number, depth: number): boolean => {
+    if (!h || seen.has(h) || depth > 48) return false
+    seen.add(h)
+    const n = node(index, h)
+    if (!n) return false
+    return n.type === 'RetriggeredOverlappedSound' || (n.children ?? []).some((c) => find(c >>> 0, depth + 1))
+  }
+  return find((hash ?? 0) >>> 0, 0)
+}
+
+export interface FiringOptions {
+  /** Shots fired: 1 for a single shot. */
+  shots?: number
+  /** Shot parts; default follows the environment (see `shotRoles`). */
+  roles?: Role[]
+  listener?: Listener
+}
+
 /**
- * Several shots at the weapon's fire rate. Automatic guns use their AutoSound (rapid fire) when they
- * have one, with its own repeat timing; the report and casings still come with every shot.
+ * One shot or several at the weapon's fire rate. Every shot plays the shot parts (gunshot or indoor
+ * shot, report, echo, casings). Automatic guns also play their AutoSound, which holds the gun's own
+ * shot: for most of them FireSound is one sound shared by every automatic gun. A part that repeats
+ * itself (start, a retrigger at its own delay, a tail when firing stops) is started once for the
+ * burst; anything else is triggered with each shot.
  */
-export function planBurst(
+export function planFiring(
   index: WeaponIndex,
+  weapon: Pick<Weapon, 'automatic' | 'timeBetweenShots'>,
   variant: WeaponVariant,
   state: PlanState,
-  shots: number,
-  timeBetweenShots: number,
-  roles?: Role[],
-  listener: Listener = DEFAULT_LISTENER,
-  weapon?: Pick<Weapon, 'automatic'>
+  opts: FiringOptions = {}
 ): Voice[] {
-  const gap = timeBetweenShots > 0 ? timeBetweenShots : 0.15
-  const all = roles ?? shotRoles(variant, listener.environment)
-  const voices: Voice[] = []
-  if (weapon?.automatic && variant.roles.auto && all.includes('fire')) {
-    voices.push(...planShot(index, variant, state, { roles: ['auto'], listener, shots, shotGapMs: gap * 1000 }))
-    const rest = all.filter((r) => r !== 'fire')
-    for (let i = 0; i < shots; i++) voices.push(...planShot(index, variant, state, { roles: rest, at: i * gap, listener }))
-    state.approximations.add('the report and casings in full-auto fire')
-    return voices
+  const shots = Math.max(1, Math.round(opts.shots ?? 1))
+  const listener = opts.listener ?? DEFAULT_LISTENER
+  const gap = weapon.timeBetweenShots > 0 ? weapon.timeBetweenShots : 0.15
+  const roles = [...(opts.roles ?? shotRoles(variant, listener.environment))]
+  // a suppressor replaces both the single and the rapid-fire shot
+  if (usesAutoSound(index, weapon, variant) && !roles.includes('suppressed')) {
+    roles.unshift('auto')
+    if (roles.some((r) => (r === 'fire' || r === 'interior') && hasSound(index, variant.roles[r])))
+      state.approximations.add('that automatic guns also play their FireSound (one sound shared by most of them) with each shot')
   }
-  for (let i = 0; i < shots; i++) voices.push(...planShot(index, variant, state, { roles: all, at: i * gap, listener }))
+  const once = roles.filter((r) => repeatsItself(index, variant.roles[r]))
+  const each = roles.filter((r) => !once.includes(r))
+  const voices: Voice[] = []
+  if (once.length) voices.push(...planShot(index, variant, state, { roles: once, listener, shots, shotGapMs: gap * 1000 }))
+  for (let i = 0; i < shots; i++) voices.push(...planShot(index, variant, state, { roles: each, at: i * gap, listener }))
   return voices
 }

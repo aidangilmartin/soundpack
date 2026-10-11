@@ -4,8 +4,18 @@ import { getFormat } from '@core/awc/types'
 import { gunFiles, fileLabel, type GunFile, type HeardBy } from '@core/describe'
 import { findOnset, pickChannel, shapeAudio } from '@core/dsp'
 import { bankKey, findAssignment, type Project, type StreamRef } from '@core/project'
-import { newPlanState, planBurst, planShot, seededRng, shotRoles, type Environment, type Listener, type Voice } from '@core/soundgraph'
-import { audienceVariants, fireRate, GROUP_LABELS, roleLabel, weaponLabel, weaponParts, type Weapon, type WeaponIndex } from '@core/weapons'
+import { newPlanState, planFiring, seededRng, shotRoles, type Environment, type Listener, type Voice } from '@core/soundgraph'
+import {
+  audienceVariants,
+  fireRate,
+  GROUP_LABELS,
+  roleLabel,
+  usesAutoSound,
+  weaponLabel,
+  weaponParts,
+  type Weapon,
+  type WeaponIndex
+} from '@core/weapons'
 import { decodeAudio, player } from '../audio'
 import { fmtDuration, refKey, type LoadedTemplate, type SourceEntry } from '../model'
 import { mixdown, renderPreview, toFloat, type ResolvedWave } from '../preview'
@@ -67,8 +77,10 @@ export function WeaponView(props: Props) {
   const variants = useMemo(() => audienceVariants(index, weapon), [index, weapon])
   const variant = listenAs === 'npc' && variants.others ? variants.others : variants.player
   const sections = useMemo(() => gunFiles(index, weapon, props.names), [index, weapon, props.names])
+  // this gun's names for its parts (an automatic gun's rapid fire is its gunshot)
+  const partLabel = (role: string): string => sections.find((s) => s.role === role)?.label ?? roleLabel(role)
   const hasSuppressed = !!variant?.roles.suppressed
-  const fullAuto = !!weapon.automatic && !!variant?.roles.auto
+  const fullAuto = !!variant && usesAutoSound(index, weapon, variant)
 
   useEffect(() => {
     setLast(null)
@@ -136,9 +148,7 @@ export function WeaponView(props: Props) {
       const state = newPlanState(seededRng(seed))
       const listener: Listener = { distance, environment }
       const roles = shotRoles(variant, environment, suppressed)
-      const voices = burst
-        ? planBurst(index, variant, state, 5, weapon.timeBetweenShots, roles, listener, weapon)
-        : planShot(index, variant, state, { roles, listener })
+      const voices = planFiring(index, weapon, variant, state, { shots: burst ? 5 : 1, roles, listener })
       const buffer = await renderPreview(voices, resolve(which), { environment, presets: index.environment })
       if (!buffer) {
         props.onError(
@@ -342,7 +352,9 @@ export function WeaponView(props: Props) {
             >
               <div className="role-header">
                 <h3>{section.label}</h3>
-                <span className="muted small role-meaning">{section.meaning}</span>
+                <span className="muted small role-meaning" title={section.meaning}>
+                  {section.meaning}
+                </span>
                 <button className="btn subtle small" onClick={() => props.onSelect(refs, refs[0])}>
                   Select all
                 </button>
@@ -386,7 +398,13 @@ export function WeaponView(props: Props) {
                           <span className="muted small mono file-label">
                             {fileLabel(f)}
                             {f.alsoRoles.length > 0 && (
-                              <span className="also"> · also used for: {f.alsoRoles.map(roleLabel).join(', ')}</span>
+                              <span className="also"> · also used for: {f.alsoRoles.map(partLabel).join(', ')}</span>
+                            )}
+                            {f.sharedWith.length > 0 && (
+                              <span className="shared-with" title={`Also used by: ${f.sharedWith.join(', ')}`}>
+                                {' '}
+                                · shared with {f.sharedWith.length === 1 ? f.sharedWith[0] : `${f.sharedWith.length} other guns`}
+                              </span>
                             )}
                           </span>
                         </td>
