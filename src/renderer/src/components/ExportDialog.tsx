@@ -69,7 +69,7 @@ export function ExportDialog({ project, onChange, onBuild, onExport, onClose }: 
           </button>
         </header>
         <p className="muted small">
-          Rebuilds the game's sound archives with your sounds: <span className="mono">WEAPONS_PLAYER.rpf</span> and{' '}
+          Rebuilds the original sound archives from your vanilla pack with your sounds: <span className="mono">WEAPONS_PLAYER.rpf</span> and{' '}
           <span className="mono">RESIDENT.rpf</span>, ready to drag into your mods folder. Your game files are not changed.
         </p>
         <label className="field">

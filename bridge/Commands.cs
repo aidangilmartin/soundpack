@@ -131,7 +131,8 @@ public static class Commands
         }
     }
 
-    sealed record Game(GameInfo Info, string Root, List<RpfFile> Archives);
+    /// <summary>The game (or vanilla pack) and the archive each wave pack's banks come from.</summary>
+    sealed record Game(GameInfo Info, string Root, List<(string Pack, RpfFile Rpf)> Packs);
 
     /// <summary>Validates the GTA V folder and loads the decryption keys from its exe.</summary>
     internal static GameInfo OpenGameInfo(Options o, string root)
@@ -155,17 +156,48 @@ public static class Commands
         return new GameInfo(root, legacy ? "gta5.exe" : "gta5_enhanced.exe", gen9, typeof(GTA5Keys).Assembly.GetName().Version?.ToString(), keys);
     }
 
+    /// <summary>
+    /// The archives to read banks from: every sfx archive of a self-contained vanilla pack; otherwise
+    /// WEAPONS_PLAYER and RESIDENT, from a plain vanilla pack when it has them, else from the install
+    /// (a copy inside update.rpf wins over x64\audio\sfx).
+    /// </summary>
     static Game OpenGame(Options o)
     {
-        var root = Path.GetFullPath(o.Require("gta"));
-        var info = OpenGameInfo(o, root);
+        var source = Vanilla.Open(o);
+        var packs = new List<(string, RpfFile)>();
+        if (source.SelfContained)
+        {
+            foreach (var name in source.Archives.Keys.OrderBy(n => n, StringComparer.OrdinalIgnoreCase))
+                packs.Add((Path.GetFileNameWithoutExtension(name).ToLowerInvariant(), Vanilla.OpenArchive(source, name)!));
+            return new Game(source.Info, source.Root, packs);
+        }
+        List<RpfFile>? installed = null;
+        foreach (var (pack, archive) in Archives)
+        {
+            if (Vanilla.OpenArchive(source, ArchiveName(pack)) is { } own)
+            {
+                packs.Add((pack, own));
+                continue;
+            }
+            installed ??= InstalledArchives(source.Root);
+            var suffix = SfxDir + archive;
+            var candidates = installed.SelectMany(Flatten).Where(r => r.Path.Replace('/', '\\').EndsWith(suffix, StringComparison.OrdinalIgnoreCase)).ToList();
+            var rpf = candidates.FirstOrDefault(r => r.Path.StartsWith("update", StringComparison.OrdinalIgnoreCase)) ?? candidates.FirstOrDefault();
+            if (rpf?.AllEntries != null) packs.Add((pack, rpf));
+        }
+        return new Game(source.Info, source.Root, packs);
+    }
+
+    /// <summary>update.rpf and the two sfx archives of an install.</summary>
+    static List<RpfFile> InstalledArchives(string root)
+    {
         var archives = new List<RpfFile>();
         if (FindPath(root, "update", "update.rpf") is { } update) archives.Add(Scan(update, @"update\update.rpf"));
         foreach (var (_, archive) in Archives)
         {
             if (FindPath(root, "x64", "audio", "sfx", archive) is { } path) archives.Add(Scan(path, SfxDir + archive));
         }
-        return new Game(info, root, archives);
+        return archives;
     }
 
     /// <summary>Case-insensitive path lookup (game files are mixed case; Linux/Proton file systems are not forgiving).</summary>
@@ -208,18 +240,13 @@ public static class Commands
             foreach (var c in Flatten(child)) yield return c;
     }
 
-    /// <summary>Sound banks per wave pack. A copy inside update.rpf wins over the base game's.</summary>
+    /// <summary>Sound banks per wave pack.</summary>
     static List<(string Pack, RpfFile Rpf, RpfFileEntry Entry)> FindBanks(Game game)
     {
-        var all = game.Archives.SelectMany(Flatten).ToList();
         var result = new List<(string, RpfFile, RpfFileEntry)>();
-        foreach (var (pack, archive) in Archives)
+        foreach (var (pack, rpf) in game.Packs)
         {
-            var suffix = SfxDir + archive;
-            var candidates = all.Where(r => r.Path.Replace('/', '\\').EndsWith(suffix, StringComparison.OrdinalIgnoreCase)).ToList();
-            var rpf = candidates.FirstOrDefault(r => r.Path.StartsWith("update", StringComparison.OrdinalIgnoreCase)) ?? candidates.FirstOrDefault();
-            if (rpf?.AllEntries == null) continue;
-            foreach (var entry in rpf.AllEntries.OfType<RpfFileEntry>())
+            foreach (var entry in rpf.AllEntries!.OfType<RpfFileEntry>())
             {
                 if (entry.NameLower.EndsWith(".awc")) result.Add((pack, rpf, entry));
             }

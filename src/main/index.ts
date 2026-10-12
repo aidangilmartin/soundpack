@@ -15,13 +15,15 @@ import {
   type GameSettings,
   type ProjectFileSource,
   type ScanReport,
-  type StoredWeaponIndex
+  type StoredWeaponIndex,
+  type VanillaStatus
 } from '../shared/ipc'
 import { bridgePath, runBridge, type BuildRpfResult, type ExtractResult, type ScanResult } from './bridge'
 import { buildIdPack } from './idPack'
 import { detectGtaFolder, isGtaFolder } from './gamePaths'
 import { LabelStore, SettingsStore, TemplateLibrary } from './library'
 import { packProject, unpackProject } from './projectFile'
+import { gunBanks, importPack, makePack, sourceArgs, vanillaKind, vanillaStatus } from './vanilla'
 
 // Lets automated tests run against a throwaway profile.
 if (process.env.GSM_USER_DATA) app.setPath('userData', process.env.GSM_USER_DATA)
@@ -37,6 +39,8 @@ const bridgeExe = (): string => bridgePath({ isPackaged: app.isPackaged, resourc
 const indexPath = (): string => join(app.getPath('userData'), 'weapon-index.json')
 const indexMetaPath = (): string => join(app.getPath('userData'), 'weapon-index.meta.json')
 const mapPath = (): string => join(app.getPath('userData'), 'sound-map.json')
+/** The vanilla pack the app works from (see vanilla.ts). */
+const vanillaDir = (): string => join(app.getPath('userData'), 'vanilla')
 /** An optional list of known names (one per line) the user can drop in to get readable hashes. */
 const namesPath = (): string => join(app.getPath('userData'), 'names.txt')
 
@@ -88,6 +92,18 @@ async function exeSignature(gtaPath: string): Promise<string | null> {
 }
 
 const progress = (message: string): void => win?.webContents.send(IPC.gameProgress, message)
+
+/** Bridge arguments for the original sounds: the vanilla pack (plus the GTA V folder for an archives-only pack). */
+async function source(): Promise<string[]> {
+  const game = await gameSettings()
+  return sourceArgs(vanillaDir(), game.gtaValid ? game.gtaPath : null)
+}
+
+/** Forgets the gun data of the previous pack, so the app asks to load the new one. */
+async function forgetLoadedPack(): Promise<void> {
+  for (const p of [indexPath(), indexMetaPath(), mapPath()]) await rm(p, { force: true })
+  cachedMap = null
+}
 
 let cachedMap: SoundMap | null = null
 
@@ -213,8 +229,7 @@ function registerIpc(): void {
   })
 
   ipcMain.handle(IPC.exportArchives, async (_e, name: string, banks: BankFile[]): Promise<ExportArchivesResult | null> => {
-    const game = await gameSettings()
-    if (!game.gtaPath || !game.gtaValid) throw new Error('The GTA V folder is needed to rebuild the archives. Scan the game first.')
+    const original = await source()
     const [parent] = await pick({ title: 'Choose where to save the sound pack', properties: ['openDirectory', 'createDirectory'] })
     if (!parent) return null
     const packName = sanitizePackName(name)
@@ -231,7 +246,7 @@ function registerIpc(): void {
       }
       const list = join(tmp, 'banks.txt')
       await writeFile(list, lines.join('\n'))
-      const args = ['build-rpf', '--gta', game.gtaPath, '--out', folder, '--bank-list', list]
+      const args = ['build-rpf', ...original, '--out', folder, '--bank-list', list]
       const result = await runBridge<BuildRpfResult>(bridgeExe(), args, progress)
       const files = result.archives.map((a) => a.file)
       await writeFile(join(folder, 'README.txt'), installReadme(packName, files).replace(/\n/g, '\r\n'))
@@ -246,17 +261,16 @@ function registerIpc(): void {
   })
 
   ipcMain.handle(IPC.exportIdPack, async (_e, name: string, banks: string[]): Promise<ExportIdPackResult | null> => {
-    const game = await gameSettings()
-    if (!game.gtaPath || !game.gtaValid) throw new Error('The GTA V folder is needed to build the ID pack. Scan the game first.')
+    const original = await source()
     const map = await readSoundMap()
-    if (!map) throw new Error('Scan the game again first: the ID pack needs the sound map.')
+    if (!map) throw new Error('Load the vanilla pack again first: the ID pack needs the sound map.')
     const [parent] = await pick({ title: 'Choose where to save the ID pack', properties: ['openDirectory', 'createDirectory'] })
     if (!parent) return null
     const folder = join(parent, sanitizePackName(name))
     if (!(await clearExportFolder(folder, ['README.txt', 'ID-LEGEND.txt', ...Object.values(PACK_ARCHIVES)]))) return null
     const tmp = await mkdtemp(join(tmpdir(), 'gsm-idpack-'))
     try {
-      return await buildIdPack({ bridge: bridgeExe(), gtaPath: game.gtaPath, map, banks, folder, tmp, progress })
+      return await buildIdPack({ bridge: bridgeExe(), source: original, map, banks, folder, tmp, progress })
     } finally {
       await rm(tmp, { recursive: true, force: true })
     }
@@ -272,24 +286,94 @@ function registerIpc(): void {
     return gameSettings()
   })
 
-  ipcMain.handle(IPC.scanGame, async (): Promise<ScanReport> => {
+  ipcMain.handle(IPC.getVanillaStatus, (): Promise<VanillaStatus> => vanillaStatus(bridgeExe(), vanillaDir()))
+
+  ipcMain.handle(IPC.importVanillaPack, async (_e, from: 'folder' | 'zip', path?: string): Promise<VanillaStatus | null> => {
+    const src =
+      path ??
+      (
+        await pick(
+          from === 'zip'
+            ? { title: 'Choose a vanilla pack (.zip)', properties: ['openFile'], filters: [{ name: 'Vanilla pack', extensions: ['zip'] }] }
+            : { title: 'Choose a vanilla pack folder', properties: ['openDirectory'] }
+        )
+      )[0]
+    if (!src) return null
+    await importPack(bridgeExe(), src, vanillaDir(), progress)
+    await forgetLoadedPack()
+    return vanillaStatus(bridgeExe(), vanillaDir())
+  })
+
+  ipcMain.handle(IPC.makeVanillaPack, async (): Promise<VanillaStatus> => {
     const s = await gameSettings()
     if (!s.gtaPath || !s.gtaValid) throw new Error('Choose your GTA V folder first (the one containing gta5.exe).')
-    const out = await mkdtemp(join(tmpdir(), 'gsm-scan-'))
+    await makePack(bridgeExe(), s.gtaPath, vanillaDir(), {
+      names: existsSync(namesPath()) ? namesPath() : undefined,
+      appVersion: app.getVersion(),
+      progress
+    })
+    await settings.update({ gtaPath: s.gtaPath })
+    await forgetLoadedPack()
+    return vanillaStatus(bridgeExe(), vanillaDir())
+  })
+
+  ipcMain.handle(IPC.saveVanillaZip, async (): Promise<string | null> => {
+    if (!vanillaKind(vanillaDir())) throw new Error('There is no vanilla pack to save yet.')
+    const opts = {
+      title: 'Save the vanilla pack',
+      defaultPath: 'gta-v-vanilla-pack.zip',
+      filters: [{ name: 'Vanilla pack', extensions: ['zip'] }]
+    }
+    const r = win ? await dialog.showSaveDialog(win, opts) : await dialog.showSaveDialog(opts)
+    if (r.canceled || !r.filePath) return null
+    const target = r.filePath.toLowerCase().endsWith('.zip') ? r.filePath : `${r.filePath}.zip`
+    await runBridge(bridgeExe(), ['zip', '--in', vanillaDir(), '--out', target], progress)
+    return target
+  })
+
+  ipcMain.handle(IPC.loadVanillaPack, async (): Promise<ScanReport> => {
+    const dir = vanillaDir()
+    const kind = vanillaKind(dir)
+    const original = await source()
+    const out = await mkdtemp(join(tmpdir(), 'gsm-load-'))
     try {
-      const names = existsSync(namesPath()) ? ['--names', namesPath()] : []
-      const result = await runBridge<ScanResult>(bridgeExe(), ['scan', '--gta', s.gtaPath, '--out', out, ...names], progress)
+      let result: { extracted: ExtractResult['extracted']; errors: ExtractResult['errors']; weapons: number; warnings: string[] }
+      let indexFile: string
+      let soundMapFile: string
+      if (kind === 'self-contained') {
+        indexFile = join(dir, 'weapon-index.json')
+        soundMapFile = join(dir, 'sound-map.json')
+        const index = JSON.parse(await readFile(indexFile, 'utf8')) as WeaponIndex
+        const banks = gunBanks(index)
+        const extract = banks.length
+          ? await runBridge<ExtractResult>(
+              bridgeExe(),
+              ['extract', ...original, '--out', out, ...banks.flatMap((b) => ['--bank', b])],
+              progress
+            )
+          : { extracted: [], errors: [] }
+        result = { ...extract, weapons: index.weapons.length, warnings: index.warnings ?? [] }
+      } else {
+        const names = existsSync(namesPath()) ? ['--names', namesPath()] : []
+        const scan = await runBridge<ScanResult>(bridgeExe(), ['scan', ...original, '--out', out, ...names], progress)
+        indexFile = scan.indexPath
+        soundMapFile = scan.mapPath
+        result = scan
+      }
       progress('Adding sound banks to your library')
+      // banks read from an earlier source (e.g. the live game) must not stand in for the originals
+      for (const t of await library.list()) if (t.origin === 'gta') await library.remove(t.pack, t.file)
       const banks = await library.importExtracted(result.extracted)
       banks.errors.push(...result.errors.map((e) => ({ name: `${e.pack}/${e.file}`, message: e.error })))
-      await writeFile(indexPath(), await readFile(result.indexPath))
-      await writeFile(mapPath(), await readFile(result.mapPath))
+      await writeFile(indexPath(), await readFile(indexFile))
+      await writeFile(mapPath(), await readFile(soundMapFile))
       cachedMap = null
+      const game = await gameSettings()
+      const gtaPath = kind === 'archives' ? game.gtaPath : null
       await writeFile(
         indexMetaPath(),
-        JSON.stringify({ gtaPath: s.gtaPath, exe: await exeSignature(s.gtaPath), scannedAt: new Date().toISOString() })
+        JSON.stringify({ kind, gtaPath, exe: gtaPath ? await exeSignature(gtaPath) : null, scannedAt: new Date().toISOString() })
       )
-      await settings.update({ gtaPath: s.gtaPath })
       return { weapons: result.weapons, banks, warnings: result.warnings }
     } finally {
       await rm(out, { recursive: true, force: true })
@@ -310,20 +394,20 @@ function registerIpc(): void {
       index,
       scannedAt: meta.scannedAt ?? '',
       stale: !!meta.exe && !!now && meta.exe !== now,
-      outdated: (index.version ?? 1) < INDEX_VERSION || !existsSync(mapPath())
+      outdated: (index.version ?? 1) < INDEX_VERSION || !existsSync(mapPath()),
+      missingPack: !vanillaKind(vanillaDir())
     }
   })
 
   ipcMain.handle(IPC.getSoundMap, () => readSoundMap())
 
   ipcMain.handle(IPC.loadGameBanks, async (_e, banks: string[]): Promise<ImportReport> => {
-    const s = await gameSettings()
-    if (!s.gtaPath || !s.gtaValid) throw new Error('Choose your GTA V folder first (the one containing gta5.exe).')
+    const original = await source()
     const out = await mkdtemp(join(tmpdir(), 'gsm-extract-'))
     try {
       const result = await runBridge<ExtractResult>(
         bridgeExe(),
-        ['extract', '--gta', s.gtaPath, '--out', out, ...banks.flatMap((b) => ['--bank', b])],
+        ['extract', ...original, '--out', out, ...banks.flatMap((b) => ['--bank', b])],
         progress
       )
       const report = await library.importExtracted(result.extracted)

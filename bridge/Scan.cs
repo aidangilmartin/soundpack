@@ -51,16 +51,27 @@ public static class GameScan
     sealed record AudioData(Dictionary<uint, RelData> Game, Dictionary<uint, RelData> Sounds, Dictionary<uint, RelData> Curves,
         Dictionary<uint, RelData> Categories);
 
-    public static ScanResult Run(Options o)
+    /// <summary>
+    /// Scans the install (--gta). With a plain vanilla pack (--vanilla), WEAPONS_PLAYER and RESIDENT
+    /// come from the pack instead: the install's own copies, including those in update.rpf, are ignored.
+    /// </summary>
+    public static ScanResult Run(Options o, string? outPath = null, Vanilla.Source? source = null)
     {
-        var root = Path.GetFullPath(o.Require("gta"));
-        var outDir = Path.GetFullPath(o.Require("out"));
-        var info = Commands.OpenGameInfo(o, root);
+        source ??= Vanilla.Open(o);
+        if (source.SelfContained)
+            throw new BridgeException("usage", "This vanilla pack already holds the gun data: load it instead of scanning.");
+        var root = source.Root;
+        var outDir = Path.GetFullPath(outPath ?? o.Require("out"));
+        var info = source.Info;
         Commands.EnsureNames(o.Get("names"));
         var warnings = new List<string>();
 
-        var archives = OpenArchives(root);
-        var all = archives.SelectMany(Commands.Flatten).ToList();
+        var replaced = source.Archives.Keys.Select(n => @"x64\audio\sfx\" + n.ToLowerInvariant()).ToList();
+        bool Shadowed(string path) => replaced.Any(suffix => path.Replace('/', '\\').EndsWith(suffix, StringComparison.OrdinalIgnoreCase));
+        var archives = OpenArchives(root, Shadowed);
+        var own = source.Archives.Keys.Select(n => Vanilla.OpenArchive(source, n)!).ToList();
+        // the vanilla pack's archives come last, so their banks win
+        var all = archives.SelectMany(Commands.Flatten).Where(r => !Shadowed(r.Path)).Concat(own).ToList();
 
         Output.Progress("Indexing sound banks");
         var containers = new Dictionary<uint, Container>();
@@ -232,7 +243,7 @@ public static class GameScan
     }
 
     /// <summary>The archives that hold audio, weapon definitions and text. Skips the OpenIV mods folder.</summary>
-    static List<RpfFile> OpenArchives(string root)
+    static List<RpfFile> OpenArchives(string root, Func<string, bool> skip)
     {
         var list = new List<(int Order, string Path, string Rel)>();
         foreach (var path in Directory.EnumerateFiles(root, "*.rpf", SearchOption.AllDirectories))
@@ -246,6 +257,7 @@ public static class GameScan
             else if (lower == @"update\update.rpf") order = 1;
             else if (lower.Contains(@"dlcpacks\") && lower.EndsWith(@"\dlc.rpf")) order = 2;
             else continue;
+            if (skip(rel)) continue;
             list.Add((order, path, rel));
         }
         var result = new List<RpfFile>();

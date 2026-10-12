@@ -709,6 +709,29 @@ a {
   display: flex;
   justify-content: space-between;
 }
+.setup-option,
+.pack-status {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.setup-option h3 {
+  margin: 0;
+  font-size: 14px;
+}
+.setup-option p {
+  margin: 0;
+}
+.pack-status {
+  background: var(--bg-sunken);
+  gap: 6px;
+}
+.warn-text {
+  color: var(--warn);
+}
 
 /* tabs */
 .tabs {

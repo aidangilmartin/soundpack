@@ -70,3 +70,19 @@ export async function makeFakeGame(
   ])
   return game
 }
+
+/**
+ * A self-contained vanilla pack made from a fake game (its banks AWC-encrypted with the test key),
+ * and a .zip of it. Returns the pack folder, the zip and the game it came from.
+ */
+export async function makeFakeVanillaPack(
+  dir: string,
+  opts: { smgBank?: boolean } = {}
+): Promise<{ pack: string; zip: string; game: string }> {
+  const game = await makeFakeGame(dir, { key: testAwcKey, smgBank: opts.smgBank })
+  const pack = join(dir, 'vanilla-pack')
+  await runBridge(bridgeExe, ['make-vanilla-pack', '--gta', game, '--out', pack, '--no-keys', '--test-awc-key', testAwcKey])
+  const zip = join(dir, 'vanilla-pack.zip')
+  await runBridge(bridgeExe, ['zip', '--in', pack, '--out', zip])
+  return { pack, zip, game }
+}

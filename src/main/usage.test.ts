@@ -99,7 +99,7 @@ describe.skipIf(!existsSync(exe))('sound usage map (integration)', () => {
     const banks = ['weapons_player/ptl_pistol.awc', 'resident/explosions.awc']
     const r = await buildIdPack({
       bridge: exe,
-      gtaPath: game,
+      source: ['--gta', game],
       map,
       banks,
       folder,

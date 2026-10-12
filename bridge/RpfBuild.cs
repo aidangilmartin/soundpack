@@ -22,9 +22,9 @@ public static class RpfBuild
 
     public static object Run(Options o)
     {
-        var root = Path.GetFullPath(o.Require("gta"));
         var outDir = Path.GetFullPath(o.Require("out"));
-        var info = Commands.OpenGameInfo(o, root);
+        var source = Vanilla.Open(o);
+        var info = source.Info;
 
         var errors = new List<BuildError>();
         var replacements = new Dictionary<string, Dictionary<string, byte[]>>(StringComparer.OrdinalIgnoreCase);
@@ -51,22 +51,28 @@ public static class RpfBuild
         var built = new List<BuiltArchive>();
         foreach (var (pack, banks) in replacements)
         {
-            var source = FindSourceArchive(root, pack);
-            var names = source.AllEntries!.OfType<RpfFileEntry>().Select(e => e.NameLower).ToHashSet();
+            var original = FindSourceArchive(source, pack);
+            var names = original.AllEntries!.OfType<RpfFileEntry>().Select(e => e.NameLower).ToHashSet();
             foreach (var missing in banks.Keys.Where(b => !names.Contains(b)).ToList())
             {
-                errors.Add(new BuildError(pack, missing, $"{missing} is not in the game's {PackArchives[pack]}."));
+                errors.Add(new BuildError(pack, missing, $"{missing} is not in the original {PackArchives[pack]}."));
                 banks.Remove(missing);
             }
-            built.Add(Rebuild(source, Path.Combine(outDir, PackArchives[pack]), pack, banks));
+            built.Add(Rebuild(original, Path.Combine(outDir, PackArchives[pack]), pack, banks));
         }
         return new { game = info, archives = built, errors };
     }
 
-    /// <summary>The archive the game actually loads: a copy inside update.rpf wins over x64\audio\sfx.</summary>
-    static RpfFile FindSourceArchive(string root, string pack)
+    /// <summary>
+    /// The original archive to rebuild: the vanilla pack's copy when it has one, otherwise the one the
+    /// game actually loads (a copy inside update.rpf wins over x64\audio\sfx).
+    /// </summary>
+    internal static RpfFile FindSourceArchive(Vanilla.Source source, string pack)
     {
         var name = PackArchives[pack];
+        if (Vanilla.OpenArchive(source, name) is { } own) return own;
+        if (source.SelfContained) throw new BridgeException("no-banks", $"{name} is not in this vanilla pack.");
+        var root = source.Root;
         var archives = new List<RpfFile>();
         if (Commands.FindPath(root, "update", "update.rpf") is { } update) archives.Add(Commands.Scan(update, @"update\update.rpf"));
         if (Commands.FindPath(root, "x64", "audio", "sfx", name) is { } path) archives.Add(Commands.Scan(path, @"x64\audio\sfx\" + name));
@@ -79,7 +85,12 @@ public static class RpfBuild
             ?? throw new BridgeException("no-banks", $@"{name} was not found under x64\audio\sfx. Is this a complete GTA V install?");
     }
 
-    static BuiltArchive Rebuild(RpfFile source, string outPath, string pack, Dictionary<string, byte[]> banks)
+    /// <summary>
+    /// Writes a fresh OPEN copy of an archive with some banks replaced. With <paramref name="stillEncrypted"/>
+    /// set, every other bank is also AWC-decrypted so the copy reads without the game's keys; banks that
+    /// can't be (multi-channel, unreadable) are copied as they are and listed there.
+    /// </summary>
+    internal static BuiltArchive Rebuild(RpfFile source, string outPath, string pack, Dictionary<string, byte[]> banks, List<string>? stillEncrypted = null)
     {
         var name = Path.GetFileName(outPath);
         if (File.Exists(outPath)) File.Delete(outPath);
@@ -116,12 +127,32 @@ public static class RpfBuild
             {
                 data = source.ExtractFile(f) ?? throw new BridgeException("rpf", $"Could not read {f.Path} from the game: {Commands.FirstLineOf(source.LastError)}");
                 if (f is RpfResourceFileEntry res) data = ResourceBuilder.AddResourceHeader(res, ResourceBuilder.Compress(data));
+                else if (stillEncrypted != null && f.NameLower.EndsWith(".awc")) data = Decrypted(pack, f, data, stillEncrypted);
             }
             RpfFile.CreateFile(DirFor(f.Parent ?? source.Root), f.Name, data);
         }
 
         Verify(source, outPath, name, banks);
         return new BuiltArchive(pack, name, outPath, files.Count, new FileInfo(outPath).Length, replaced);
+    }
+
+    /// <summary>A bank without its AWC encryption, or as it is when it isn't encrypted or can't be decrypted.</summary>
+    static byte[] Decrypted(string pack, RpfFileEntry entry, byte[] data, List<string> stillEncrypted)
+    {
+        try
+        {
+            var awc = new AwcFile();
+            awc.Load(data, entry);
+            var encrypted = awc.WholeFileEncrypted || awc.SingleChannelEncryptFlag || awc.MultiChannelEncryptFlag;
+            if (!encrypted) return data;
+            if (string.IsNullOrEmpty(awc.ErrorMessage) && !awc.MultiChannelFlag) return Commands.SaveDecrypted(awc);
+        }
+        catch (Exception)
+        {
+            // unreadable: keep it as it is
+        }
+        stillEncrypted.Add($"{pack}/{entry.NameLower}");
+        return data;
     }
 
     /// <summary>Re-reads the new archive: same files, and the replaced banks byte for byte.</summary>

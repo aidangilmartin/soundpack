@@ -14,9 +14,12 @@ export function HelpDialog({ onClose }: Props) {
         </header>
         <ol>
           <li>
-            <b>Find your game.</b> On first launch the app finds (or asks for) your GTA V folder and reads every gun and its sounds from the
-            game files, using CodeWalker's library and the decryption keys in your own <span className="mono">gta5.exe</span>. Nothing in
-            the game folder changes. Run <b>Scan game again</b> after a game update.
+            <b>Get a vanilla pack.</b> The app works from GTA V's original gun sounds, kept in its own folder, so sound mods in your game
+            never change ▶ Original. On first launch, <b>make one from GTA V</b> (the app copies the original sounds and gun data out of
+            your install once, using CodeWalker and the keys in your own <span className="mono">gta5.exe</span>; verify the game files first
+            if your game is modded) or <b>use a vanilla pack</b>: a .zip the app made, which works on any PC without GTA V, or original{' '}
+            <span className="mono">WEAPONS_PLAYER.rpf</span> / <span className="mono">RESIDENT.rpf</span> you kept.{' '}
+            <b>Change vanilla pack…</b> saves it as a .zip to move it.
           </li>
           <li>
             <b>Pick a gun.</b> You see every file it uses, under the part it belongs to (gunshot, distant report, echo, reload…), each with
@@ -49,8 +52,8 @@ export function HelpDialog({ onClose }: Props) {
           </li>
         </ol>
         <p className="small muted">
-          Everything you don't change is copied over from your game unchanged. Change both your gun and what others hear, or other players
-          may still hear vanilla shots. Always test in-game with a second client.
+          Everything you don't change is copied over from the vanilla pack unchanged. Change both your gun and what others hear, or other
+          players may still hear vanilla shots. Always test in-game with a second client.
         </p>
         <p className="small muted">Your projects (.gunpack) keep your own audio files, never game files.</p>
         <p className="small muted">

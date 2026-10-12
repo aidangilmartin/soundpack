@@ -23,7 +23,8 @@ import { BridgeError, runBridge, type BuildRpfResult, type ExtractResult } from 
 
 export interface IdPackOptions {
   bridge: string
-  gtaPath: string
+  /** Bridge arguments for the original sounds (see vanilla.ts `sourceArgs`). */
+  source: string[]
   map: SoundMap
   /** "pack/bank.awc" keys to label. */
   banks: string[]
@@ -76,7 +77,7 @@ export async function buildIdPack(o: IdPackOptions): Promise<IdPackResult> {
   const bankDir = join(o.tmp, 'banks')
   const extracted = await runBridge<ExtractResult>(
     o.bridge,
-    ['extract', '--gta', o.gtaPath, '--out', bankDir, ...banks.flatMap((b) => ['--bank', b]), ...extra],
+    ['extract', ...o.source, '--out', bankDir, ...banks.flatMap((b) => ['--bank', b]), ...extra],
     o.progress
   )
   errors.push(...extracted.errors.map((e) => `${e.pack}/${e.file}: ${e.error}`))
@@ -159,7 +160,7 @@ export async function buildIdPack(o: IdPackOptions): Promise<IdPackResult> {
   await writeFile(listPath, lines.join('\n'))
   const built = await runBridge<BuildRpfResult>(
     o.bridge,
-    ['build-rpf', '--gta', o.gtaPath, '--out', o.folder, '--bank-list', listPath, ...extra],
+    ['build-rpf', ...o.source, '--out', o.folder, '--bank-list', listPath, ...extra],
     o.progress
   )
   errors.push(...built.errors.map((e) => `${e.pack}/${e.file}: ${e.error}`))

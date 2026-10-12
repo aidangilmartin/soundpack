@@ -33,6 +33,23 @@ export interface GameSettings {
   bridgeAvailable: boolean
 }
 
+/** A self-contained vanilla pack (made by the app, works without GTA V) or original archives only. */
+export type VanillaKind = 'self-contained' | 'archives'
+
+export interface VanillaStatus {
+  /** null: no vanilla pack yet. */
+  kind: VanillaKind | null
+  /** When a self-contained pack was made, and how many guns it holds. */
+  madeAt: string | null
+  weapons: number | null
+  /** Archive files in the pack. */
+  archives: string[]
+  /** E.g. archives that look rebuilt by a mod tool. */
+  warnings: string[]
+  /** Banks that couldn't be decrypted when the pack was made (multi-channel); they need GTA V's keys. */
+  encryptedBanks: number
+}
+
 export interface ScanReport {
   weapons: number
   banks: ImportReport
@@ -44,8 +61,10 @@ export interface StoredWeaponIndex {
   scannedAt: string
   /** The game exe changed since the scan (e.g. a game update): suggest scanning again. */
   stale: boolean
-  /** Scanned by an older version without the sound usage map: suggest scanning again. */
+  /** Made by an older version without the current gun data: suggest making the pack again. */
   outdated: boolean
+  /** There's no vanilla pack (e.g. data from an older version that read the game directly). */
+  missingPack: boolean
 }
 
 export interface GameInfo {
@@ -122,12 +141,19 @@ export interface Api {
   getGameSettings(): Promise<GameSettings>
   /** Opens a folder dialog (or uses `path`) and remembers the GTA V folder. */
   setGtaPath(path?: string): Promise<GameSettings>
-  /** Reads every gun's sounds from the game, extracts their banks into the library and stores the weapon index. */
-  scanGame(): Promise<ScanReport>
+  getVanillaStatus(): Promise<VanillaStatus>
+  /** Copies a vanilla pack (folder, or .zip of one) into the app; opens a dialog unless `path` is given. */
+  importVanillaPack(from: 'folder' | 'zip', path?: string): Promise<VanillaStatus | null>
+  /** Makes a self-contained vanilla pack from the GTA V folder. */
+  makeVanillaPack(): Promise<VanillaStatus>
+  /** Saves the vanilla pack as a .zip (to move it to another PC); returns the path. */
+  saveVanillaZip(): Promise<string | null>
+  /** Loads every gun and its sound banks from the vanilla pack into the library. */
+  loadVanillaPack(): Promise<ScanReport>
   getWeaponIndex(): Promise<StoredWeaponIndex | null>
-  /** What every sound in WEAPONS_PLAYER.rpf / RESIDENT.rpf is for (from the last scan). */
+  /** What every sound in WEAPONS_PLAYER.rpf / RESIDENT.rpf is for (from the vanilla pack). */
   getSoundMap(): Promise<SoundMap | null>
-  /** Extracts banks ("pack/bank.awc") from the game into the library. */
+  /** Extracts banks ("pack/bank.awc") from the vanilla pack into the library. */
   loadGameBanks(banks: string[]): Promise<ImportReport>
   onGameProgress(listener: (message: string) => void): () => void
 
@@ -154,7 +180,11 @@ export const IPC = {
   openProject: 'project:open',
   getGameSettings: 'game:settings',
   setGtaPath: 'game:set-gta',
-  scanGame: 'game:scan',
+  getVanillaStatus: 'vanilla:status',
+  importVanillaPack: 'vanilla:import',
+  makeVanillaPack: 'vanilla:make',
+  saveVanillaZip: 'vanilla:save-zip',
+  loadVanillaPack: 'vanilla:load',
   getWeaponIndex: 'game:weapon-index',
   getSoundMap: 'game:sound-map',
   loadGameBanks: 'game:load-banks',

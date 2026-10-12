@@ -220,7 +220,9 @@ export function App() {
   }
 
   const onScanned = async (report: ScanReport): Promise<void> => {
-    forget(report.banks.imported.map((t) => bankKey(t.pack, t.file)))
+    // every bank from the previous source is gone or replaced by the pack's
+    setLoaded(new Map())
+    setLoadErrors(new Map())
     await refreshLibrary()
     const [idx, map] = await Promise.all([window.api.getWeaponIndex(), window.api.getSoundMap()])
     setWeaponIndex(idx)
@@ -232,11 +234,11 @@ export function App() {
     const failed = report.banks.errors.length
     notify(
       failed ? 'error' : 'info',
-      `Found ${report.weapons} guns and ${report.banks.imported.length} sound banks.${failed ? ` ${failed} banks failed: ${report.banks.errors.map((e) => e.name).join(', ')}` : ''}`
+      `Loaded the vanilla pack: ${report.weapons} guns and ${report.banks.imported.length} sound banks.${failed ? ` ${failed} banks failed: ${report.banks.errors.map((e) => e.name).join(', ')}` : ''}`
     )
   }
 
-  /** Extracts a bank the sound map lists from the game into the library. */
+  /** Extracts a bank the sound map lists from the vanilla pack into the library. */
   const loadFromGame = async (key: string): Promise<void> => {
     if (loadingBanks.has(key)) return
     setLoadingBanks((s) => new Set(s).add(key))
@@ -409,7 +411,7 @@ export function App() {
       select([], null)
       const missing = p.banks.filter((b) => !library.some((t) => bankKey(t.pack, t.file) === bankKey(b.pack, b.file)))
       if (missing.length)
-        notify('error', `These sound banks aren't in your library — scan the game: ${missing.map((b) => b.file).join(', ')}`)
+        notify('error', `These sound banks aren't in your library — load the vanilla pack again: ${missing.map((b) => b.file).join(', ')}`)
     } catch (e) {
       notify('error', (e as Error).message)
     }
@@ -440,7 +442,7 @@ export function App() {
       const t =
         loaded.get(bankKey(b.pack, b.file)) ??
         (await ensureLoaded(b.pack, b.file).catch(() => {
-          throw new Error(`${b.pack}/${b.file} isn't in your library. Scan the game first.`)
+          throw new Error(`${b.pack}/${b.file} isn't in your library. Load the vanilla pack again first.`)
         }))
       templates.set(bankKey(b.pack, b.file), t.awc)
       const n: Record<number, string> = { ...t.names }
@@ -510,7 +512,7 @@ export function App() {
 
   if (!ready) return <div className="app" />
 
-  if (!index) {
+  if (!index || weaponIndex?.missingPack) {
     return (
       <div className="app">
         <Setup mode="welcome" onDone={(r) => void onScanned(r)} />
@@ -630,7 +632,7 @@ export function App() {
             className="btn subtle"
             onClick={() => setDialog('idpack')}
             disabled={!soundMap}
-            title={soundMap ? 'Build a test pack where every sound says its code' : 'Scan the game again to map every sound first'}
+            title={soundMap ? 'Build a test pack where every sound says its code' : 'Load the vanilla pack again to map every sound first'}
           >
             Identify in game…
           </button>

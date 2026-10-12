@@ -93,29 +93,32 @@ export function BankView(props: Props) {
         )}
         {props.onLoadFromGame ? (
           <>
-            <p>This bank isn't in your library yet. Load it from your game to listen to it, see what each sound is for and replace them.</p>
+            <p>
+              This bank isn't in your library yet. Load it from the vanilla pack to listen to it, see what each sound is for and replace
+              them.
+            </p>
             <div className="row gap">
               <button className="btn primary" onClick={props.onLoadFromGame} disabled={props.loadingFromGame}>
-                {props.loadingFromGame ? 'Loading…' : 'Load from game'}
+                {props.loadingFromGame ? 'Loading…' : 'Load from pack'}
               </button>
             </div>
           </>
         ) : (
           <>
             <p>
-              This sound bank isn't in your library. Scanning the game adds every bank the guns use; other banks can be imported by hand.
+              This sound bank isn't in your library. Loading the vanilla pack adds every bank the guns use; other banks can be imported by
+              hand.
             </p>
             <div className="row gap">
               <button className="btn primary" onClick={props.onExtractFromGame}>
-                Scan game…
+                Vanilla pack…
               </button>
             </div>
           </>
         )}
         <p className="muted small">
-          Uses CodeWalker to read{' '}
-          <span className="mono">{item.pack === 'resident' ? 'x64/audio/sfx/RESIDENT.rpf' : 'x64/audio/sfx/WEAPONS_PLAYER.rpf'}</span>{' '}
-          directly. Already exported <span className="mono">{item.file}</span> yourself?{' '}
+          Comes from <span className="mono">{item.pack === 'resident' ? 'RESIDENT.rpf' : 'WEAPONS_PLAYER.rpf'}</span> in the vanilla pack.
+          Already exported <span className="mono">{item.file}</span> yourself?{' '}
           <button className="btn subtle small" onClick={props.onImportAwc}>
             Import .awc…
           </button>
@@ -203,7 +206,7 @@ export function BankView(props: Props) {
           <p className="muted mono small">
             audio/sfx/{item.pack}/{item.file} · {template.summaries.length} streams ·{' '}
             {item.template.origin === 'gta'
-              ? 'from your game'
+              ? 'from the vanilla pack'
               : item.template.origin === 'codewalker-xml'
                 ? 'from CodeWalker XML'
                 : 'from .awc'}

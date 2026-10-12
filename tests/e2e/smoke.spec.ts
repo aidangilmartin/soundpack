@@ -6,7 +6,7 @@ import { parseAwc } from '../../src/core/awc/read'
 import { getFormat } from '../../src/core/awc/types'
 import { encodeWav16 } from '../../src/core/wav'
 import { runBridge, type ExtractResult } from '../../src/main/bridge'
-import { bridgeExe, makeFakeGame, repoRoot, testAwcKey } from '../fakeGame'
+import { bridgeExe, makeFakeGame, makeFakeVanillaPack, repoRoot, testAwcKey } from '../fakeGame'
 
 const shots = process.env.SCREENSHOT_DIR
 
@@ -16,9 +16,15 @@ async function stubOpen(app: ElectronApplication, paths: string[]): Promise<void
   }, paths)
 }
 
+async function stubSave(app: ElectronApplication, path: string): Promise<void> {
+  await app.evaluate(({ dialog }, p) => {
+    dialog.showSaveDialog = (async () => ({ canceled: false, filePath: p })) as typeof dialog.showSaveDialog
+  }, path)
+}
+
 test.skip(!existsSync(bridgeExe), 'run npm run build:bridge first')
 
-test('first launch: find GTA V, edit a gun, preview it and export', async () => {
+test('first launch: make a vanilla pack from GTA V, edit a gun, preview it and export', async () => {
   const work = mkdtempSync(join(tmpdir(), 'gsm-e2e-'))
   const game = await makeFakeGame(work, { key: testAwcKey, smgBank: true })
   const shot = Int16Array.from({ length: 24000 }, (_, i) => Math.round(Math.sin(i / 3) * 20000 * Math.exp(-i / 4000)))
@@ -44,7 +50,7 @@ test('first launch: find GTA V, edit a gun, preview it and export', async () => 
   await page.getByRole('button', { name: 'Browse…' }).click()
   await expect(page.getByText('gta5.exe found')).toBeVisible()
   if (shots) await page.screenshot({ path: join(shots, '1-setup.png') })
-  await page.getByRole('button', { name: 'Find my guns' }).click()
+  await page.getByRole('button', { name: 'Make vanilla pack' }).click()
 
   // every gun is listed; pick the pistol
   const guns = page.getByRole('navigation', { name: 'Guns' })
@@ -152,37 +158,48 @@ test('first launch: find GTA V, edit a gun, preview it and export', async () => 
   await app.close()
 })
 
-test('sound banks: every bank, what each sound is for, and the in-game ID pack', async () => {
+test('a zipped vanilla pack on a PC without GTA V: every bank, what each sound is for, and the in-game ID pack', async () => {
   const work = mkdtempSync(join(tmpdir(), 'gsm-e2e-banks-'))
-  const game = await makeFakeGame(work, { key: testAwcKey })
-  const app = await electron.launch({
-    args: ['--no-sandbox', repoRoot],
-    env: {
-      ...process.env,
-      GSM_USER_DATA: join(work, 'profile'),
-      GSM_BRIDGE_EXTRA_ARGS: JSON.stringify(['--no-keys', '--test-awc-key', testAwcKey])
-    }
-  })
+  const { zip } = await makeFakeVanillaPack(work)
+  // no GTA V and no keys: the pack has everything, unencrypted
+  const env = Object.fromEntries(
+    Object.entries({ ...process.env, GSM_USER_DATA: join(work, 'profile') }).filter(
+      ([k, v]) => k !== 'GSM_BRIDGE_EXTRA_ARGS' && v !== undefined
+    )
+  ) as Record<string, string>
+  const app = await electron.launch({ args: ['--no-sandbox', repoRoot], env })
   const page = await app.firstWindow()
-  await stubOpen(app, [game])
-  await page.getByRole('button', { name: 'Browse…' }).click()
-  await page.getByRole('button', { name: 'Find my guns' }).click()
+  await expect(page.getByRole('heading', { name: 'Welcome to Gun Soundpack Maker' })).toBeVisible()
+  await stubOpen(app, [zip])
+  await page.getByRole('button', { name: 'Choose .zip…' }).click()
   await expect(page.getByRole('navigation', { name: 'Guns' })).toBeVisible()
+
+  // the pack can be saved as a .zip again, to move it to another PC
+  await page.getByRole('button', { name: 'Change vanilla pack…' }).click()
+  const setup = page.getByRole('dialog', { name: 'Set up' })
+  await expect(setup.getByLabel('Current vanilla pack')).toContainText('Vanilla pack: 2 guns')
+  if (shots) await page.screenshot({ path: join(shots, '8-vanilla.png') })
+  const copy = join(work, 'copy.zip')
+  await stubSave(app, copy)
+  await setup.getByRole('button', { name: 'Save as .zip…' }).click()
+  await expect(setup.getByText(/Saved to/)).toBeVisible()
+  expect(existsSync(copy)).toBe(true)
+  await setup.getByRole('button', { name: 'Cancel' }).click()
 
   await page.getByRole('tab', { name: 'Sound banks' }).click()
   await page.locator('.bank-item[title^="resident/weapons.awc"]').click()
-  await expect(page.getByText('from your game')).toBeVisible()
+  await expect(page.getByText('from the vanilla pack')).toBeVisible()
   await expect(page.locator('table.streams tbody tr')).toHaveCount(3)
   await page.locator('table.streams tbody tr', { hasText: '02032920' }).click()
   await expect(page.locator('table.streams tbody tr', { hasText: '02032920' })).toContainText('Your Pistol')
   await page.getByRole('button', { name: 'Silence' }).click()
   await expect(page.locator('table.streams tbody tr', { hasText: '02032920' })).toContainText('Silenced')
 
-  // a bank no gun uses is listed from the sound map and loads from the game on demand
+  // a bank no gun uses is listed from the sound map and loads from the pack on demand
   const explosions = page.locator('.bank-item[title^="resident/explosions.awc"]')
   await expect(explosions).toHaveClass(/missing/) // not in the library yet
   await explosions.click()
-  await page.getByRole('button', { name: 'Load from game' }).click()
+  await page.getByRole('button', { name: 'Load from pack' }).click()
   await expect(page.locator('table.streams tbody tr')).toHaveCount(3)
   await expect(page.locator('table.streams tbody tr', { hasText: '0AA87351' })).toContainText('Unused')
   await expect(page.locator('table.streams tbody tr', { hasText: '16EF0EA5' })).toContainText('Explosion')

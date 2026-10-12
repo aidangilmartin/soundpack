@@ -1,10 +1,10 @@
 # Gun Soundpack Maker
 
-A desktop app for making **GTA V / FiveM gun sound packs**. It reads every gun's sounds from your game, lets you swap in your own gunshots with an in-game-style preview, and rebuilds `WEAPONS_PLAYER.rpf` and `RESIDENT.rpf`. You drag the two files into your mods folder, with no OpenIV or CodeWalker round-trips.
+A desktop app for making **GTA V / FiveM gun sound packs**. It works from a **vanilla pack** of GTA V's original gun sounds, lets you swap in your own gunshots with an in-game-style preview, and rebuilds `WEAPONS_PLAYER.rpf` and `RESIDENT.rpf`. You drag the two files into your mods folder, with no OpenIV or CodeWalker round-trips.
 
 ## What it does
 
-- **Finds your game on first launch.** It locates GTA V (from FiveM's settings or the usual Steam, Rockstar and Epic folders) or asks you for the folder. Then it reads every gun and its sounds straight from the game files, using [CodeWalker](https://github.com/dexyfex/CodeWalker)'s library, which is bundled with the app. Nothing in your game folder is changed.
+- **Works from a vanilla pack, not your live game files** (see [Vanilla pack](#vanilla-pack)). The original sounds and gun data live in the app's own folder, so sound mods in your game never change what ▶ Original plays, and a pack the app made works on any PC, with or without GTA V. Game files are read with [CodeWalker](https://github.com/dexyfex/CodeWalker)'s library, which is bundled with the app. Nothing in your game folder is changed.
 - **Lists every gun**, grouped by type and shown with its in-game name. Select one and you see **every file it uses**, under the part of the shot it belongs to (gunshot, rapid fire, distant report, echo, indoor shot, suppressed, casings, heft, reload, slow motion…). Each part says what it does, and each file says what it is and who hears it:
 
   ```
@@ -39,11 +39,11 @@ A desktop app for making **GTA V / FiveM gun sound packs**. It reads every gun's
     README.txt           where to put them
   ```
 
-  The app rebuilds each archive from your own game: every file is copied over, with your changed sound banks swapped in. Only archives with changes are written. They're OPEN (unencrypted) archives, the standard format for mod folders.
+  The app rebuilds each archive from the vanilla pack: every file is copied over, with your changed sound banks swapped in. Only archives with changes are written. They're OPEN (unencrypted) archives, the standard format for mod folders.
 
 - **Identify sounds in game.** **Identify in game…** builds a test pack where every sound says its code, such as "pistol 4". Install it, play, and type what you hear into **What did I hear?** to jump to that sound. This confirms the data in game, and also catches sounds the game code or scripts play by name, which no data file explains. Without a Windows voice, the sounds beep their number instead.
 - **Saves projects** as `.gunpack` files. They hold your settings and your own source audio, never game files.
-- **Sound banks tab (advanced).** Every bank of both archives, labelled with what uses it (banks no gun uses load from the game when you open them). Each sound has a **Used for** column traced through the game's audio data (which gun, explosion, animation or script plays it); filter by what you're after (e.g. "echo") or show only the unused ones. Manual `.awc` and CodeWalker XML import still work.
+- **Sound banks tab (advanced).** Every bank of both archives, labelled with what uses it (banks no gun uses load from the vanilla pack when you open them). Each sound has a **Used for** column traced through the game's audio data (which gun, explosion, animation or script plays it); filter by what you're after (e.g. "echo") or show only the unused ones. Manual `.awc` and CodeWalker XML import still work.
 
 ## Which banks to replace
 
@@ -98,21 +98,31 @@ Some sounds aren't referenced by any data: the game code or a script plays them 
 
 Meanings marked "(from the field name)" come from CodeWalker's names for the fields. The data proves the sound is wired to that field, and the ID pack shows exactly when it plays.
 
-Hashes show as `0x…` when their name isn't known. To get more readable names, drop a list of known names (one per line) into the app's data folder as `names.txt` and scan again.
+Hashes show as `0x…` when their name isn't known. To get more readable names, drop a list of known names (one per line) into the app's data folder as `names.txt` and make the vanilla pack again.
 
-## First launch
+## Vanilla pack
 
-1. The app looks for GTA V. Confirm the folder or click **Browse…** to pick the one containing `gta5.exe`.
-2. Click **Find my guns**. The app scans the game once. It:
-   - reads `weapons.meta`, the audio metadata and the sound banks;
-   - extracts the gun banks (unencrypted) into its library;
-   - remembers which sounds belong to which gun;
-   - maps what every sound in both archives is for.
-3. Pick a gun and start replacing sounds.
+The app never reads your live game files while you work. It works from a vanilla pack of GTA V's original gun sounds, kept in its own data folder (`vanilla/`). There are two kinds:
 
-After a game update, the app notices the change and offers **Scan game again**.
+| Kind                                   | What it holds                                                                                                                                                                                                        | Needs GTA V?                                  |
+| -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
+| **Made by the app** (folder or `.zip`) | `WEAPONS_PLAYER.rpf` and `RESIDENT.rpf` as unencrypted copies with every bank decrypted, an archive of gun banks for DLC wave packs, the gun data (`weapon-index.json`, `sound-map.json`) and `gunpack-vanilla.json` | No: any PC, no keys                           |
+| **Original archives**                  | `WEAPONS_PLAYER.rpf` and/or `RESIDENT.rpf` you kept as a backup (anywhere in the folder you pick)                                                                                                                    | Yes, for the decryption keys and the gun data |
 
-The app never ships Rockstar's files. Like CodeWalker, it reads the decryption keys from your own `gta5.exe`.
+### First launch
+
+- **Make one from GTA V.** The app finds GTA V (from FiveM's settings or the usual Steam, Rockstar and Epic folders) or you **Browse…** to the folder with `gta5.exe`. **Make vanilla pack** reads the game once:
+  - `weapons.meta`, the audio metadata and the sound banks;
+  - extracts and decrypts the banks, and maps what every sound is for;
+  - writes the pack and loads it.
+
+  If your game is modded, **verify the game files** in Steam or the Rockstar Games Launcher first. FiveM's and OpenIV's `mods` folders don't count: the app reads the base archives. The app flags an archive that isn't encrypted the way Rockstar ships it, since a mod tool probably rebuilt it.
+
+- **Use a vanilla pack.** **Choose .zip…** or **Choose folder…** picks a pack the app made, or a folder with original archives. With original archives only, the app also needs your GTA V folder; **Make vanilla pack** then turns them into a pack that works without GTA V.
+
+**Change vanilla pack…** (in the gun list) shows what the current pack is, and **Save as .zip…** saves it to move it to another PC.
+
+The app never ships Rockstar's files, and a vanilla pack holds Rockstar's files copied from your own game: keep it for your own use and out of public uploads and repositories. Like CodeWalker, the app reads the decryption keys from your own `gta5.exe`.
 
 ## Installing the pack
 
@@ -143,12 +153,14 @@ To run the optional real-file round-trip tests, point `AWC_SAMPLES_DIR` at a fol
 
 ### CodeWalker bridge
 
-`bridge/` is a small .NET 8 command-line program the app runs to read the game.
+`bridge/` is a small .NET 8 command-line program the app runs to read the game and vanilla packs.
 
 - **Commands:**
   - `scan` builds the weapon index and the sound usage map, and extracts the gun banks.
   - `build-rpf` rebuilds `WEAPONS_PLAYER.rpf`/`RESIDENT.rpf` as fresh OPEN archives. It copies every original file (decrypted) and swaps in the replaced banks, then reads the result back to verify it.
   - `list` and `extract` work on banks directly.
+  - `make-vanilla-pack` scans the game and writes a self-contained vanilla pack (OPEN archives with AWC-decrypted banks, plus the gun data). `inspect-vanilla` says what a folder holds and flags archives that look rebuilt. `zip` and `unzip` move packs around.
+  - Every command that reads sounds takes `--vanilla <dir>`. On its own, it reads a self-contained pack (no `--gta`, no keys). Together with `--gta`, its `WEAPONS_PLAYER.rpf`/`RESIDENT.rpf` replace the install's, including the copies in `update.rpf`.
   - `speak` turns phrases into WAV files with the Windows voices (System.Speech), for the ID pack. It returns `no-tts` elsewhere.
   - All commands output JSON.
 - **Building.** `npm run build:bridge` fetches CodeWalker's source at a pinned commit into `bridge/.codewalker/` (git-ignored) and builds CodeWalker.Core. It then publishes the bridge, with CodeWalker inside, as a self-contained executable in `resources/bridge/`, which electron-builder packages.
@@ -166,7 +178,7 @@ To run the optional real-file round-trip tests, point `AWC_SAMPLES_DIR` at a fol
     `src/core/usage.ts` walks it from a stream to every trigger and puts each path into words. `src/core/idpack.ts` builds the ID pack's codes, labels and legend.
 
 - **The preview** (`src/core/soundgraph.ts` → `src/renderer/src/preview.ts`) plans each shot from that graph and renders it with Web Audio.
-- **Tests.** The bridge integration and Electron tests build a fake GTA V folder with unencrypted RPF archives (`make-test-game`). It contains AWC-encrypted banks (with a test key), audio metadata built from `tests/fixtures/game/*.rel.xml` (crossfades, stereo pairs, If branches, sound sets, an explosion, a code-only sound), a `weapons.meta` and a weapon clip dictionary with an audio tag. The tests skip themselves when the bridge isn't built.
+- **Tests.** The bridge integration and Electron tests build a fake GTA V folder with unencrypted RPF archives (`make-test-game`). It contains AWC-encrypted banks (with a test key), audio metadata built from `tests/fixtures/game/*.rel.xml` (crossfades, stereo pairs, If branches, sound sets, an explosion, a code-only sound), a `weapons.meta` and a weapon clip dictionary with an audio tag. `src/main/vanilla.test.ts` makes a vanilla pack from it and reads it back with no keys at all, imports zipped and plain packs, and checks that original archives win over a modded install. The tests skip themselves when the bridge isn't built.
 
 **CodeWalker licensing.** CodeWalker's source is released "for educational purposes only" and has no open-source license. It is bundled here for convenience; get permission from dexyfex before redistributing the app. See `THIRD_PARTY_NOTICES.md`.
 
@@ -179,7 +191,9 @@ To run the optional real-file round-trip tests, point `AWC_SAMPLES_DIR` at a fol
 | `src/core/dsp.ts`                                                     | Shaping pipeline (trim, fades, normalise, windowed-sinc resampling, dithered 16-bit)                                                     |
 | `src/core/build.ts`                                                   | Applies a project to the template banks (the bridge then packs them into `.rpf` archives)                                                |
 | `src/main/`                                                           | Electron main process: dialogs, template library, project files, export, CodeWalker bridge runner                                        |
+| `src/main/vanilla.ts`                                                 | The vanilla pack store: import (folder or zip), make, and the bridge arguments for reading the original sounds                           |
 | `bridge/`                                                             | .NET 8 CodeWalker bridge: scans the game (weapons, sound graphs, the usage map, banks), extracts and rebuilds archives, speaks ID labels |
+| `bridge/Vanilla.cs`                                                   | Vanilla packs: `--vanilla` sources, `make-vanilla-pack`, `inspect-vanilla`, `zip`/`unzip`                                                |
 | `src/core/usage.ts`, `src/core/fields.ts`                             | What every stream is for, and what each game-object sound field means                                                                    |
 | `src/core/idpack.ts`, `src/main/idPack.ts`                            | The in-game ID pack: codes, spoken/beep labels, bank building within the original size, legend                                           |
 | `src/core/weapons.ts`, `src/core/soundgraph.ts`, `src/core/curves.ts` | Weapon index, gun parts, and the shot planner (distance, categories, curves, envelopes)                                                  |

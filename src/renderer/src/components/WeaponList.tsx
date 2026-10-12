@@ -35,9 +35,11 @@ export function WeaponList({ weapons, selected, changed, onSelect, onRescan, sta
         />
         {(stale || outdated) && (
           <p className="note small">
-            {stale ? 'GTA V was updated since the last scan.' : 'Scan again to see what every sound is for.'}{' '}
+            {stale
+              ? 'GTA V was updated since the pack was loaded.'
+              : 'This vanilla pack was made by an older version: make it again to see what every sound is for.'}{' '}
             <button className="btn subtle small" onClick={onRescan}>
-              Scan again
+              Vanilla pack…
             </button>
           </p>
         )}
@@ -64,7 +66,7 @@ export function WeaponList({ weapons, selected, changed, onSelect, onRescan, sta
       </nav>
       <div className="sidebar-actions">
         <button className="btn subtle small" onClick={onRescan}>
-          Scan game again…
+          Change vanilla pack…
         </button>
       </div>
     </aside>

@@ -156,7 +156,7 @@ export function WeaponView(props: Props) {
             ? 'Everything in this shot is silenced.'
             : distance > 0
               ? 'Nothing of this shot is audible from that far.'
-              : "This gun's sound banks aren't in your library. Scan the game again."
+              : "This gun's sound banks aren't in your library. Load the vanilla pack again."
         )
         return
       }

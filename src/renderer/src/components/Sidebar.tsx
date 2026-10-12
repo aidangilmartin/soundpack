@@ -36,8 +36,8 @@ export function Sidebar({ items, activeKey, top, onSelect, onExtractFromGame, on
     <aside className="sidebar">
       <div className="sidebar-actions">
         {top}
-        <button className="btn" onClick={onExtractFromGame} title="Read every gun's sounds from your GTA V install again">
-          Scan game again…
+        <button className="btn" onClick={onExtractFromGame} title="Choose, make or save the vanilla pack the original sounds come from">
+          Change vanilla pack…
         </button>
         <div className="row gap import-row">
           <button className="btn subtle small" onClick={onImportAwc} title="Import .awc files you exported yourself">
@@ -86,7 +86,7 @@ export function Sidebar({ items, activeKey, top, onSelect, onExtractFromGame, on
                         {item.template ? (
                           <span className="muted">{item.template.streamCount}</span>
                         ) : item.summary ? (
-                          <span className="muted" title="Not loaded yet: open it to load it from your game">
+                          <span className="muted" title="Not loaded yet: open it to load it from the vanilla pack">
                             {item.summary.streams}
                           </span>
                         ) : (
