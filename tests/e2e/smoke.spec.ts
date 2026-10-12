@@ -112,7 +112,7 @@ test('first launch: make a vanilla pack from GTA V, edit a gun, preview it and e
   await page.getByRole('button', { name: 'Single' }).click()
   await page.getByRole('button', { name: '▶ Original' }).click()
   await expect(page.locator('.preview-bar .waveform-label', { hasText: 'Original' })).toBeVisible()
-  await expect(page.locator('.preview-note')).toContainText('automatic guns also play their FireSound')
+  await expect(page.locator('.preview-note')).not.toContainText('automatic guns also play their FireSound')
   await expect(page.getByRole('button', { name: 'Full auto ×5' })).toBeVisible()
   if (shots) await page.screenshot({ path: join(shots, '6-smg.png') })
 

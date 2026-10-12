@@ -152,7 +152,7 @@ function sectionText(role: Role, automatic: boolean, files: GunFile[]): { label:
       meaning:
         (shared
           ? `The same sound for this gun and ${others.size} other gun${others.size === 1 ? '' : 's'}; changing it changes all of them. `
-          : '') + "Played with each shot on top of the gun's own sound.",
+          : '') + 'The full preview uses the gunshot above. Play this layer separately with its file play buttons.',
       inferred: true
     }
   }

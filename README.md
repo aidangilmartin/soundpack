@@ -52,7 +52,7 @@ A desktop app for making **GTA V / FiveM gun sound packs**. It works from a **va
 | `WEAPONS_PLAYER.rpf` → `*.awc` (e.g. `ptl_pistol.awc`, `smg_smg.awc`, `sht_pump.awc`) | Per-gun weapon banks                     |
 | `RESIDENT.rpf` → `weapons.awc` and others                                             | Shared banks, used by many guns and NPCs |
 
-**Automatic guns keep their own shot in their rapid-fire sound (AutoSound).** In the game data, the FireSound of every player automatic gun is one shared sound: generic layers in `RESIDENT.rpf`, the same for 22 weapon settings in the base game (SMGs, rifles, MGs, the AP Pistol, the minigun…). NPC versions set it to silence. So for an automatic gun the gun view lists the rapid-fire sound first, as **Gunshot**, and the shared one as **Shared shot layer**. Any file other guns use too says **shared with …**; changing it changes them all.
+**Automatic guns keep their own shot in their rapid-fire sound (AutoSound).** In the game data, the FireSound of every player automatic gun is one shared sound: generic layers in `RESIDENT.rpf`, the same for 22 weapon settings in the base game (SMGs, rifles, MGs, the AP Pistol, the minigun…). NPC versions set it to silence. So for an automatic gun the gun view lists the rapid-fire sound first, as **Gunshot**, and the shared one as **Shared shot layer**. The preview uses AutoSound for both single shots and bursts, without layering FireSound over it. FireSound remains available to play and edit separately; the data does not establish that the engine triggers both together. Any file other guns use too says **shared with …**; changing it changes them all.
 
 Don't go by the archive name alone: a gun's shot can mix files from both archives (community notes describe stock shots split into a left channel in `WEAPONS_PLAYER.rpf` and a right channel in `RESIDENT.rpf`). The gun view's **Heard by** column shows, from the gun's own data, which files you hear and which files other players and NPCs hear.
 
@@ -79,7 +79,6 @@ CodeWalker can play the raw files in a bank, but not a gunshot: the game's audio
 - where echoes come from outdoors (the count, delay and level come from the game's typical environment rule);
 - the default distance roll-off for sounds without their own curve, and a few curve shapes;
 - game variables the engine sets at runtime (taken as 0);
-- that automatic guns also play their FireSound (the shared layer) with each shot: the data suggests it (NPC versions silence it), but only the engine knows;
 - occlusion, doppler, the speed of sound, mixer scenes and voice limits (not modelled);
 - when shell casings land (physics).
 

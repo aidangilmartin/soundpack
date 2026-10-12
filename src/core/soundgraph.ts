@@ -1,6 +1,6 @@
 import { curveIsExact, defaultDistanceAttenuation, evalCurve } from './curves'
 import type { Curve, EnvelopeSettings, MixCategory, Role, SoundHeader, Weapon, WeaponIndex, WeaponVariant } from './weapons'
-import { hasSound, node, usesAutoSound } from './weapons'
+import { node, usesAutoSound } from './weapons'
 
 /**
  * Turns the game's sound graph for one gunshot into concrete "voices" (which wave, when, how loud,
@@ -534,8 +534,9 @@ export interface FiringOptions {
 
 /**
  * One shot or several at the weapon's fire rate. Every shot plays the shot parts (gunshot or indoor
- * shot, report, echo, casings). Automatic guns also play their AutoSound, which holds the gun's own
- * shot: for most of them FireSound is one sound shared by every automatic gun. A part that repeats
+ * shot, report, echo, casings). Automatic guns use their AutoSound in place of FireSound, even for
+ * one shot. FireSound is often a shared layer; adding it on top assumes an undocumented engine
+ * trigger and makes different guns sound alike. A part that repeats
  * itself (start, a retrigger at its own delay, a tail when firing stops) is started once for the
  * burst; anything else is triggered with each shot.
  */
@@ -549,12 +550,10 @@ export function planFiring(
   const shots = Math.max(1, Math.round(opts.shots ?? 1))
   const listener = opts.listener ?? DEFAULT_LISTENER
   const gap = weapon.timeBetweenShots > 0 ? weapon.timeBetweenShots : 0.15
-  const roles = [...(opts.roles ?? shotRoles(variant, listener.environment))]
+  let roles = [...(opts.roles ?? shotRoles(variant, listener.environment))]
   // a suppressor replaces both the single and the rapid-fire shot
   if (usesAutoSound(index, weapon, variant) && !roles.includes('suppressed')) {
-    roles.unshift('auto')
-    if (roles.some((r) => (r === 'fire' || r === 'interior') && hasSound(index, variant.roles[r])))
-      state.approximations.add('that automatic guns also play their FireSound (one sound shared by most of them) with each shot')
+    roles = ['auto', ...roles.filter((r) => r !== 'fire' && r !== 'auto')]
   }
   const once = roles.filter((r) => repeatsItself(index, variant.roles[r]))
   const each = roles.filter((r) => !once.includes(r))

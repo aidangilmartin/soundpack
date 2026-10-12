@@ -297,14 +297,13 @@ describe('automatic guns', () => {
     return { voices: planFiring(idx, weapon, v, state, { shots, roles: ['fire'] }), notes: [...state.approximations] }
   }
 
-  it("plays the gun's own AutoSound for a single shot: start and tail, with the shared FireSound", () => {
+  it("plays the gun's own AutoSound for a single shot without adding the shared FireSound", () => {
     const { voices, notes } = fire(smg, variant('shared_fire', 'smg_auto'))
     expect(voices.map((v) => [v.role, v.file, Math.round(v.time * 1000)])).toEqual([
       ['auto', 0x0c64bf88, 0],
-      ['auto', 0x141616e8, 75],
-      ['fire', 0x1e0651de, 0]
+      ['auto', 0x141616e8, 75]
     ])
-    expect(notes.some((n) => n.includes('FireSound'))).toBe(true)
+    expect(notes.some((n) => n.includes('FireSound'))).toBe(false)
   })
 
   it('sounds different for two guns that share their FireSound', () => {
@@ -313,7 +312,11 @@ describe('automatic guns', () => {
   })
 
   it('keeps a retriggered AutoSound going for a burst at its own delay, the rest with every shot', () => {
-    const { voices } = fire(smg, variant('shared_fire', 'smg_auto'), 3)
+    const v = {
+      ...variant('shared_fire', 'smg_auto'),
+      roles: { fire: joaat('shared_fire'), auto: joaat('smg_auto'), report: joaat('npc_auto') }
+    }
+    const voices = planFiring(idx, smg, v, newPlanState(seededRng(4)), { shots: 3, roles: ['fire', 'report'] })
     const auto = voices.filter((v) => v.role === 'auto').map((v) => [v.file, Math.round(v.time * 1000)])
     expect(auto).toEqual([
       [0x0c64bf88, 0],
@@ -321,7 +324,37 @@ describe('automatic guns', () => {
       [0x06ef0ea5, 150],
       [0x141616e8, 225]
     ])
-    expect(voices.filter((v) => v.role === 'fire').map((v) => Math.round(v.time * 1000))).toEqual([0, 80, 160])
+    // The variant's 20 ms report predelay is preserved for every shot.
+    expect(voices.filter((v) => v.role === 'report').map((v) => Math.round(v.time * 1000))).toEqual([20, 100, 180])
+    expect(voices.some((v) => v.role === 'fire')).toBe(false)
+  })
+
+  it('does not change an automatic shot when its unused FireSound changes', () => {
+    for (const auto of ['smg_auto', 'rifle_auto', 'npc_auto']) {
+      for (const shots of [1, 5]) {
+        expect(fire(smg, variant('shared_fire', auto), shots).voices).toEqual(fire(smg, variant('silence', auto), shots).voices)
+      }
+    }
+  })
+
+  it('preserves the indoor shot alongside AutoSound and does not duplicate an explicitly selected AutoSound', () => {
+    const v = {
+      ...variant('shared_fire', 'smg_auto'),
+      roles: { fire: joaat('shared_fire'), auto: joaat('smg_auto'), interior: joaat('npc_auto') }
+    }
+    const indoor = planFiring(idx, smg, v, newPlanState(seededRng(4)), { roles: ['interior'] })
+    expect(indoor.filter((v) => v.role === 'auto')).toHaveLength(2)
+    expect(indoor.filter((v) => v.role === 'interior')).toHaveLength(1)
+    expect(indoor.some((v) => v.role === 'fire')).toBe(false)
+    const explicit = planFiring(idx, smg, v, newPlanState(seededRng(4)), { roles: ['auto'] })
+    expect(explicit).toHaveLength(2)
+  })
+
+  it('keeps FireSound as a fallback when there is no playable AutoSound', () => {
+    for (const auto of ['silence', 'missing']) {
+      const { voices } = fire(smg, variant('shared_fire', auto))
+      expect(voices.map((v) => [v.role, v.file])).toEqual([['fire', 0x1e0651de]])
+    }
   })
 
   it('triggers a one-shot AutoSound (NPC style) with every shot, and plays nothing for silence', () => {
