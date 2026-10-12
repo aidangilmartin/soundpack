@@ -874,6 +874,15 @@ fieldset.scope {
 .file-label .shared-with {
   color: var(--warn);
 }
+.legend {
+  margin: 0;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.role-header .select-buttons {
+  flex: none;
+  gap: 4px;
+}
 .heard {
   white-space: nowrap;
   font-size: 12px;

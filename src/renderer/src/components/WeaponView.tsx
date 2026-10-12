@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent, type MouseEvent } from 'react'
 import { decodeStreamPcm } from '@core/awc/replace'
 import { getFormat } from '@core/awc/types'
-import { gunFiles, fileLabel, type GunFile, type HeardBy } from '@core/describe'
+import { fileLabel, gunFiles, sameSoundsAs, sharingNote, shotSharing, type GunFile, type HeardBy } from '@core/describe'
 import { findOnset, pickChannel, shapeAudio } from '@core/dsp'
 import { bankKey, findAssignment, type Project, type StreamRef } from '@core/project'
 import { newPlanState, planFiring, seededRng, shotRoles, type Environment, type Listener, type Voice } from '@core/soundgraph'
@@ -33,8 +33,6 @@ interface Props {
   selection: StreamRef[]
   focus: StreamRef | null
   playing: string | null
-  sameForEveryone: boolean
-  onSameForEveryone: (v: boolean) => void
   onSelect: (refs: StreamRef[], focus: StreamRef | null) => void
   onPlayPart: (ref: StreamRef, which: 'original' | 'new') => void
   onDropFiles: (files: File[], refs: StreamRef[]) => void
@@ -42,6 +40,16 @@ interface Props {
 }
 
 const HEARD_BY: Record<HeardBy, string> = { you: 'You', others: 'Others', everyone: 'Everyone' }
+
+/** Quick selections for a part, shown when they differ from "Select all": your files, others', this gun's own. */
+function selectChoices(files: GunFile[]): [string, GunFile[]][] {
+  const choices: [string, GunFile[]][] = [
+    ['Yours', files.filter((f) => f.heardBy !== 'others')],
+    ["Others'", files.filter((f) => f.heardBy !== 'you')],
+    ["Only this gun's", files.filter((f) => shotSharing(f).length === 0)]
+  ]
+  return choices.filter(([, picked]) => picked.length > 0 && picked.length < files.length)
+}
 const DISTANCES: [number, string][] = [
   [0, 'At the gun'],
   [10, '10 m away'],
@@ -77,6 +85,7 @@ export function WeaponView(props: Props) {
   const variants = useMemo(() => audienceVariants(index, weapon), [index, weapon])
   const variant = listenAs === 'npc' && variants.others ? variants.others : variants.player
   const sections = useMemo(() => gunFiles(index, weapon, props.names), [index, weapon, props.names])
+  const twins = useMemo(() => sameSoundsAs(index, weapon), [index, weapon])
   // this gun's names for its parts (an automatic gun's rapid fire is its gunshot)
   const partLabel = (role: string): string => sections.find((s) => s.role === role)?.label ?? roleLabel(role)
   const hasSuppressed = !!variant?.roles.suppressed
@@ -224,6 +233,12 @@ export function WeaponView(props: Props) {
             {GROUP_LABELS[weapon.group] ?? weapon.group} · <span className="mono">{weapon.name}</span>
             {rpm ? ` · ${rpm} rounds/min` : ''} · {fileCount} files{changedHere ? ` · ${changedHere} changed` : ''}
           </p>
+          {twins.length > 0 && (
+            <p className="small warn-text">
+              {twins.map(weaponLabel).join(', ')} {twins.length === 1 ? 'uses' : 'use'} exactly the same sounds: changing one changes{' '}
+              {twins.length === 1 ? 'both' : 'all of them'}.
+            </p>
+          )}
         </div>
       </header>
 
@@ -326,16 +341,14 @@ export function WeaponView(props: Props) {
         </p>
       </div>
 
-      <div className="toolbar">
-        <label className="small row gap">
-          <input type="checkbox" checked={props.sameForEveryone} onChange={(e) => props.onSameForEveryone(e.target.checked)} />
-          Others hear the same sound
-        </label>
-      </div>
+      <p className="muted small legend">
+        Heard by: <b>You</b> = your own gun · <b>Others</b> = how other players and NPCs hear it · <b>Everyone</b> = both. A replacement
+        changes exactly the sounds you select; files other guns fire too say so, and you're asked before they change.
+      </p>
 
       <div className="table-wrap">
         {sections.length === 0 && (
-          <p className="muted pad">No sounds for this gun were found in your library. Try scanning the game again.</p>
+          <p className="muted pad">No sounds for this gun were found in your library. Try loading the vanilla pack again.</p>
         )}
         {sections.map((section) => {
           const refs = section.files.map(toRef)
@@ -355,9 +368,20 @@ export function WeaponView(props: Props) {
                 <span className="muted small role-meaning" title={section.meaning}>
                   {section.meaning}
                 </span>
-                <button className="btn subtle small" onClick={() => props.onSelect(refs, refs[0])}>
-                  Select all
-                </button>
+                <span className="row gap select-buttons">
+                  <button className="btn subtle small" onClick={() => props.onSelect(refs, refs[0])}>
+                    Select all
+                  </button>
+                  {selectChoices(section.files).map(([label, files]) => (
+                    <button
+                      key={label}
+                      className="btn subtle small"
+                      onClick={() => props.onSelect(files.map(toRef), files[0] ? toRef(files[0]) : null)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </span>
               </div>
               <table className="streams">
                 <tbody>
@@ -400,10 +424,10 @@ export function WeaponView(props: Props) {
                             {f.alsoRoles.length > 0 && (
                               <span className="also"> · also used for: {f.alsoRoles.map(partLabel).join(', ')}</span>
                             )}
-                            {f.sharedWith.length > 0 && (
-                              <span className="shared-with" title={`Also used by: ${f.sharedWith.join(', ')}`}>
+                            {sharingNote(f) && (
+                              <span className={shotSharing(f).length ? 'shared-with' : 'shared-minor'} title={sharingNote(f)!.title}>
                                 {' '}
-                                · shared with {f.sharedWith.length === 1 ? f.sharedWith[0] : `${f.sharedWith.length} other guns`}
+                                · {sharingNote(f)!.text}
                               </span>
                             )}
                           </span>

@@ -8,6 +8,7 @@ import { hex8 } from './hash'
 import { WEAPON_FIELDS } from './fields'
 import {
   orderedRoles,
+  roleGroup,
   roleLabel,
   usesAutoSound,
   variantAudience,
@@ -30,8 +31,13 @@ export interface GunFile {
   heardBy: HeardBy
   /** Other parts of this gun that play the same file. */
   alsoRoles: Role[]
-  /** Other guns that use the same file (changing it changes them too). */
-  sharedWith: string[]
+  /** Other guns that use the same file, and in which of their parts (changing it changes them too). Guns with exactly the same sounds are left out. */
+  sharedWith: SharedUse[]
+}
+
+export interface SharedUse {
+  gun: string
+  parts: Role[]
 }
 
 export interface GunSection {
@@ -119,10 +125,10 @@ function leafPaths(index: WeaponIndex, root: number, nameOf: (h: number) => stri
 
 const fileKey = (pack: string, bank: string, streamId: number): string => `${pack}/${bank}:${streamId}`
 
-const gunsByFile = new WeakMap<WeaponIndex, Map<string, Set<string>>>()
+const gunsByFile = new WeakMap<WeaponIndex, Map<string, Map<string, Set<Role>>>>()
 
-/** Which guns use each file, any part, any variant (worked out once per index). */
-function gunsUsing(index: WeaponIndex): Map<string, Set<string>> {
+/** Which guns use each file and in which parts, across all variants (worked out once per index). */
+function gunsUsing(index: WeaponIndex): Map<string, Map<string, Set<Role>>> {
   let map = gunsByFile.get(index)
   if (map) return map
   map = new Map()
@@ -130,12 +136,43 @@ function gunsUsing(index: WeaponIndex): Map<string, Set<string>> {
     for (const v of w.variants) {
       for (const p of weaponParts(index, v)) {
         const k = fileKey(p.pack, p.bank, p.streamId)
-        map.set(k, (map.get(k) ?? new Set()).add(w.name))
+        const guns = map.get(k) ?? new Map<string, Set<Role>>()
+        map.set(k, guns)
+        guns.set(w.name, (guns.get(w.name) ?? new Set()).add(p.role))
       }
     }
   }
   gunsByFile.set(index, map)
   return map
+}
+
+/** The gunshot and everything fired with it: rapid fire, report, echo, indoor and suppressed shots. */
+export const isShotPart = (role: Role): boolean => roleGroup(role) === 'shooting'
+
+/** Other guns that use a file in one of their shot parts (not just slow motion, handling…). */
+export const shotSharing = (f: Pick<GunFile, 'sharedWith'>): SharedUse[] => f.sharedWith.filter((s) => s.parts.some(isShotPart))
+
+/**
+ * Other guns whose sounds are exactly this gun's (the same weapon audio settings, e.g. a Mk II that
+ * reuses the original's): changing one always changes the others.
+ */
+export function sameSoundsAs(index: WeaponIndex, weapon: Weapon): Weapon[] {
+  const sig = (w: Weapon): string => [...new Set(w.variants.map((v) => v.settings >>> 0))].sort().join(',')
+  const mine = sig(weapon)
+  return mine ? index.weapons.filter((w) => w.name !== weapon.name && sig(w) === mine) : []
+}
+
+/** A short note on which other guns a file belongs to, with every gun and part in `title`. */
+export function sharingNote(f: Pick<GunFile, 'sharedWith'>): { text: string; title: string } | null {
+  if (!f.sharedWith.length) return null
+  const title = f.sharedWith.map((s) => `${s.gun}: ${s.parts.map((r) => roleLabel(r).toLowerCase()).join(', ')}`).join('\n')
+  const shot = shotSharing(f)
+  if (shot.length) return { text: shot.length === 1 ? `shared with ${shot[0].gun}` : `shared with ${shot.length} other guns`, title }
+  const parts = [...new Set(f.sharedWith.flatMap((s) => s.parts.map((r) => roleLabel(r).toLowerCase())))].join(', ')
+  return {
+    text: f.sharedWith.length === 1 ? `also ${f.sharedWith[0].gun}'s ${parts}` : `also the ${parts} of ${f.sharedWith.length} other guns`,
+    title
+  }
 }
 
 const AUTO_GUNSHOT = "This gun's own shot: the first shot, a repeat for each further shot while the trigger is held, then a tail."
@@ -145,8 +182,8 @@ function sectionText(role: Role, automatic: boolean, files: GunFile[]): { label:
   const info = WEAPON_FIELDS[role] ?? { meaning: '', inferred: true }
   if (automatic && role === 'auto') return { label: 'Gunshot', meaning: AUTO_GUNSHOT, inferred: false }
   if (automatic && role === 'fire') {
-    const others = new Set(files.flatMap((f) => f.sharedWith))
-    const shared = files.length > 0 && files.every((f) => f.sharedWith.length > 0)
+    const others = new Set(files.flatMap((f) => shotSharing(f).map((s) => s.gun)))
+    const shared = files.length > 0 && files.every((f) => shotSharing(f).length > 0)
     return {
       label: shared ? 'Shared shot layer' : 'Shot layer',
       meaning:
@@ -174,6 +211,7 @@ export function gunFiles(index: WeaponIndex, weapon: Weapon, names: Record<strin
   const automatic = weapon.variants.some((v) => usesAutoSound(index, weapon, v))
   const users = gunsUsing(index)
   const labelOf = new Map(index.weapons.map((w) => [w.name, weaponLabel(w)]))
+  const same = new Set(sameSoundsAs(index, weapon).map((w) => w.name))
   const sections = new Map<Role, Map<string, GunFile & { texts: Set<string>; audiences: Set<'you' | 'others'> }>>()
   const rolesOfFile = new Map<string, Set<Role>>()
   for (const v of weapon.variants) {
@@ -214,8 +252,13 @@ export function gunFiles(index: WeaponIndex, weapon: Weapon, names: Record<strin
       text: [...f.texts].join(' / '),
       heardBy: f.audiences.size > 1 ? 'everyone' : [...f.audiences][0],
       alsoRoles: [...(rolesOfFile.get(key) ?? [])].filter((r) => r !== role),
-      sharedWith: [...(users.get(key) ?? [])].filter((n) => n !== weapon.name).map((n) => labelOf.get(n) ?? n)
+      sharedWith: [...(users.get(key) ?? new Map<string, Set<Role>>())]
+        .filter(([n]) => n !== weapon.name && !same.has(n))
+        .map(([n, parts]) => ({ gun: labelOf.get(n) ?? n, parts: orderedRoles(parts) }))
+        .sort((a, b) => a.gun.localeCompare(b.gun))
     }))
+    // this gun's own files first, then the ones other guns fire too
+    files.sort((a, b) => Number(shotSharing(a).length > 0) - Number(shotSharing(b).length > 0))
     const text = sectionText(role, automatic, files)
     const whole = `The whole ${text.label.toLowerCase()}`
     return { role, ...text, files: files.map((f) => ({ ...f, text: f.text.replaceAll(WHOLE, whole) })) }

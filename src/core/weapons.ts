@@ -313,33 +313,3 @@ export function audienceVariants(index: WeaponIndex, weapon: Weapon): { player?:
 export function fireRate(w: Weapon): number | null {
   return w.timeBetweenShots > 0 ? Math.round(60 / w.timeBetweenShots) : null
 }
-
-/**
- * With "same sound for everyone", a part picked in one variant (e.g. your gun's gunshot) also
- * covers the parts with the same role in the other variants (how others hear that gunshot).
- */
-export function expandToAudiences(
-  index: WeaponIndex,
-  weapon: Weapon,
-  refs: { pack: string; file: string; streamId: number }[]
-): WeaponPart[] {
-  const key = (p: { pack: string; file?: string; bank?: string; streamId: number }): string => `${p.pack}/${p.bank ?? p.file}:${p.streamId}`
-  const wanted = new Set(refs.map(key))
-  const roles = new Set<Role>()
-  const out = new Map<string, WeaponPart>()
-  const partsByVariant = weapon.variants.map((v) => weaponParts(index, v))
-  const touched = partsByVariant.map((parts) => parts.some((p) => wanted.has(key(p))))
-  partsByVariant.forEach((parts) => {
-    for (const part of parts) {
-      if (!wanted.has(key(part))) continue
-      roles.add(part.role)
-      out.set(key(part), part)
-    }
-  })
-  // variants the selection came from keep exactly the selection; the others get the same roles
-  partsByVariant.forEach((parts, i) => {
-    if (touched[i]) return
-    for (const part of parts) if (roles.has(part.role)) out.set(key(part), part)
-  })
-  return [...out.values()]
-}

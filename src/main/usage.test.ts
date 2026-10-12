@@ -70,7 +70,9 @@ describe.skipIf(!existsSync(exe))('sound usage map (integration)', () => {
     const near = streamUsage(map, 'weapons_player', 'ptl_pistol.awc', MECH).descriptions.find((d) => d.what === 'Echo / tail')!
     expect(near.when).toEqual(['close range (fades out between 20 m and 80 m)'])
     const far = streamUsage(map, 'resident', 'weapons.awc', BODY_B).descriptions
+    // the SMG's echo is this same file, whole
     expect(far.map((d) => `${d.what}: ${d.when.join(', ')}`).sort()).toEqual([
+      'Echo / tail: ',
       'Echo / tail: at a distance (fades in between 20 m and 80 m)',
       'Heft: left channel'
     ])

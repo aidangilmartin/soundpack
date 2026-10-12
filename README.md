@@ -16,7 +16,7 @@ A desktop app for making **GTA V / FiveM gun sound packs**. It works from a **va
    ▶  Close range (20–80 m), left channel                                             Everyone
   ```
 
-  **Heard by** tells you whether a file is part of your own gun, of how other players and NPCs hear it, or both, straight from the gun's data. With **Others hear the same sound** on, replacing your gun's files also replaces the matching files others hear.
+  **Heard by** tells you whether a file is part of your own gun, of how other players and NPCs hear it, or both, straight from the gun's data. A replacement changes exactly the files you select; each part has **Select all · Yours · Others' · Only this gun's** to pick quickly. GTA V builds many shots from a gun's own "body" plus generic layers it shares with other guns (for example, the Pistol's gunshot is one file in `ptl_pistol.awc` plus four RESIDENT layers that 17–24 other weapons fire too, and what others hear is a generic NPC pistol sound). Every file shared with another gun says so (**shared with SMG**, **shared with 17 other guns**, or **also Combat MG's slow-mo gunshot** when only a minor part uses it; hover for every gun and part), the gun's own files come first, and the app asks before a change reaches another gun's shot (**Change them too** or **Only this gun's files**). Guns with exactly the same sounds (e.g. a Mk II that reuses the original's) are named at the top of the gun.
 
 - **Previews the shot from the game's data** (see [How the preview is built](#how-the-preview-is-built)).
   - ▶ Original and ▶ Yours play every layer, random variation, level, pitch, delay, filter, mix category, distance curve, crossfade, stereo collapse and envelope the game data defines.

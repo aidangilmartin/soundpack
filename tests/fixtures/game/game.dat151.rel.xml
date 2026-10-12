@@ -44,6 +44,7 @@
    <Version value="0" />
    <FireSound>smg_player_fire</FireSound>
    <AutoSound>smg_auto</AutoSound>
+   <EchoSound>pistol_echo_far</EchoSound>
   </Item>
   <Item type="ExplosionAudioSettings" ntOffset="0">
    <Name>explosion_grenade</Name>

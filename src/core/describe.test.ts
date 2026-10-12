@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { fileLabel, gunFiles, shortStep } from './describe'
+import { fileLabel, gunFiles, sameSoundsAs, sharingNote, shortStep } from './describe'
 import { joaat } from './hash'
-import type { SoundNode } from './weapons'
+import type { SoundNode, Weapon } from './weapons'
 import { fixtureIndex } from './weapons.fixture'
 
 const h = (s: string): number => joaat(s)
@@ -86,7 +86,7 @@ describe('gunFiles for automatic guns', () => {
       ...smg,
       name: 'WEAPON_ASSAULTRIFLE',
       displayName: 'Assault Rifle',
-      variants: [{ ...smg.variants[0], roles: { fire: h('shared_fire'), auto: h('rifle_auto') } }]
+      variants: [{ ...smg.variants[0], settings: h('rifle_player'), roles: { fire: h('shared_fire'), auto: h('rifle_auto') } }]
     })
     return { index, smg }
   }
@@ -98,13 +98,88 @@ describe('gunFiles for automatic guns', () => {
     expect(sections[0].files.map((f) => f.text)).toEqual(['First shot', 'Each further shot (trigger held)', 'Tail when you let go'])
     expect(sections[0].files.every((f) => f.sharedWith.length === 0)).toBe(true)
     expect(sections[1].meaning).toMatch(/this gun and 1 other gun; changing it changes all of them/)
-    expect(sections[1].files[0]).toMatchObject({ text: 'The whole shared shot layer', sharedWith: ['Assault Rifle'] })
+    expect(sections[1].files[0]).toMatchObject({
+      text: 'The whole shared shot layer',
+      sharedWith: [{ gun: 'Assault Rifle', parts: ['fire'] }]
+    })
   })
 
   it('keeps the usual order for guns that are not automatic', () => {
     const { index, smg } = autoIndex()
     const sections = gunFiles(index, { ...smg, automatic: false })
     expect(sections.map((s) => s.label)).toEqual(['Gunshot', 'Rapid fire'])
+  })
+})
+
+describe('which files other guns share', () => {
+  /**
+   * Shaped like the game's Pistol: its own body (also reused as the Combat MG's slow-mo shot), a
+   * generic layer every pistol fires, a generic NPC sound, and a Mk II with exactly the same sounds.
+   */
+  function sharedIndex() {
+    const index = fixtureIndex()
+    index.containers[String(h('weapons_player/ptl_pistol'))] = { pack: 'weapons_player', bank: 'ptl_pistol.awc' }
+    Object.assign(index.nodes, {
+      [h('p_fire')]: { type: 'MultitrackSound', header: {}, children: [h('p_body'), h('generic_layer')] },
+      [h('p_body')]: simple('weapons_player/ptl_pistol', 0x108fbf4a),
+      [h('generic_layer')]: simple('resident/weapons', 0x00cfc264),
+      [h('npc_pistols')]: simple('resident/weapons', 0x1e5a3aed),
+      [h('combat_fire')]: simple('resident/weapons', 0x00cfc264)
+    })
+    const variant = (settings: string, category: string, roles: Record<string, number>) => ({
+      category,
+      settings: h(settings),
+      roles,
+      reportVolumeDelta: 0,
+      reportPredelayDelta: 0,
+      tailEnergy: 0
+    })
+    const gun = (name: string, displayName: string, variants: Weapon['variants']): Weapon => ({
+      name,
+      displayName,
+      group: 'GROUP_PISTOL',
+      audio: `AUDIO_ITEM_${name}`,
+      timeBetweenShots: 0.15,
+      fireType: 'INSTANT_HIT',
+      variants
+    })
+    const pistolVariants = [
+      variant('w_ptl_pistol_player', 'player', { fire: h('p_fire') }),
+      variant('w_ptl_pistol_npc', 'npc', { fire: h('npc_pistols') })
+    ]
+    index.weapons = [
+      gun('WEAPON_PISTOL', 'Pistol', pistolVariants),
+      gun('WEAPON_PISTOL_MK2', 'Pistol Mk II', pistolVariants),
+      gun('WEAPON_COMBATPISTOL', 'Combat Pistol', [
+        variant('w_ptl_combat_player', 'player', { fire: h('combat_fire') }),
+        variant('w_ptl_combat_npc', 'npc', { fire: h('npc_pistols') })
+      ]),
+      gun('WEAPON_COMBATMG', 'Combat MG', [variant('w_lmg_combat_player', 'player', { slowMoFireSound: h('p_body') })])
+    ]
+    return index
+  }
+
+  it("names each other gun and the parts it uses a file in, and lists the gun's own files first", () => {
+    const index = sharedIndex()
+    const [gunshot] = gunFiles(index, index.weapons[0])
+    expect(gunshot.files.map((f) => [f.streamId, f.heardBy, sharingNote(f)?.text ?? null])).toEqual([
+      [0x108fbf4a, 'you', "also Combat MG's slow-mo gunshot"],
+      [0x00cfc264, 'you', 'shared with Combat Pistol'],
+      [0x1e5a3aed, 'others', 'shared with Combat Pistol']
+    ])
+    expect(sharingNote(gunshot.files[1])!.title).toBe('Combat Pistol: gunshot')
+    // the Mk II has exactly the same sounds: named once in the header, not on every file
+    expect(sameSoundsAs(index, index.weapons[0]).map((w) => w.name)).toEqual(['WEAPON_PISTOL_MK2'])
+    expect(gunshot.files.every((f) => f.sharedWith.every((s) => s.gun !== 'Pistol Mk II'))).toBe(true)
+    expect(
+      sharingNote({
+        sharedWith: [
+          { gun: 'A', parts: ['fire'] },
+          { gun: 'B', parts: ['echo'] }
+        ]
+      })!.text
+    ).toBe('shared with 2 other guns')
+    expect(sharingNote({ sharedWith: [] })).toBeNull()
   })
 })
 

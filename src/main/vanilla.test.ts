@@ -25,7 +25,8 @@ const withTestKey = async <T>(fn: () => Promise<T>): Promise<T> => {
 
 const streamsOf = (path: string) => parseAwc(new Uint8Array(readFileSync(path))).streams
 
-describe.skipIf(!existsSync(exe))('vanilla packs (integration)', () => {
+// each test makes fake games and packs through the bridge: allow for a busy machine
+describe.skipIf(!existsSync(exe))('vanilla packs (integration)', { timeout: 30_000 }, () => {
   afterEach(() => {
     delete process.env.GSM_BRIDGE_EXTRA_ARGS
   })

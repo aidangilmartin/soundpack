@@ -87,6 +87,29 @@ test('first launch: make a vanilla pack from GTA V, edit a gun, preview it and e
   await expect(page.locator('.preview-bar .waveform-label', { hasText: 'In-game recording' })).toBeVisible()
   await page.getByRole('combobox', { name: 'Distance' }).selectOption('0')
 
+  // a replacement changes exactly the sounds you pick
+  await rows.first().click()
+  await page.getByRole('button', { name: 'Add sound…' }).click()
+  await page.getByRole('button', { name: /^Assign/ }).click()
+  await expect(rows.first()).toContainText('my_shot.wav')
+  await expect(rows.nth(1)).not.toContainText('my_shot.wav')
+  await expect(page.locator('.bank-item[title="WEAPON_PISTOL"]')).toContainText('1 changed')
+
+  // a file the SMG fires too says so, and changing it asks first
+  const echo = page.locator('.role-group', { has: page.getByRole('heading', { name: 'Echo / tail', exact: true }) })
+  const far = echo.locator('tbody tr', { hasText: 'Far away' })
+  await expect(far).toContainText('shared with SMG')
+  await far.click()
+  await expect(page.locator('.inspector')).toContainText('also part of the shot of SMG')
+  await page.getByRole('button', { name: /^Assign/ }).click()
+  const confirm = page.getByRole('dialog', { name: 'Also used by other guns' })
+  await expect(confirm).toContainText('SMG')
+  await expect(confirm.getByRole('button', { name: /Only this gun's files/ })).toBeDisabled()
+  if (shots) await page.screenshot({ path: join(shots, '9-shared.png') })
+  await confirm.getByRole('button', { name: 'Cancel' }).click()
+  await expect(far).not.toContainText('my_shot.wav')
+  await expect(page.locator('.bank-item[title="WEAPON_SMG"]')).not.toContainText('changed')
+
   // replace the whole gunshot: your files and what others hear
   await gunshot.getByRole('button', { name: 'Select all' }).click()
   await page.getByRole('button', { name: 'Add sound…' }).click()

@@ -33,8 +33,9 @@ export function HelpDialog({ onClose }: Props) {
           </li>
           <li>
             <b>Replace sounds.</b> Select a part (or “Select all”), add a WAV/MP3/OGG/FLAC and assign it — or drop the file straight onto a
-            part. With “Others hear the same sound” on, the matching files others hear change too. Trim, fade, normalize and resample on the
-            right.
+            part. A replacement changes exactly the files you select; “Yours”, “Others'” and “Only this gun's” pick quickly. Many shots
+            share generic layers with other guns: those files say “shared with …”, and the app asks before changing another gun. Trim, fade,
+            normalize and resample on the right.
           </li>
           <li>
             <b>Preview.</b> ▶ Original and ▶ Yours build the shot from the game's sound data: every layer, random variation, level, pitch,

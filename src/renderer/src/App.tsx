@@ -21,10 +21,10 @@ import {
   type Project,
   type StreamRef
 } from '@core/project'
-import { gunFiles } from '@core/describe'
+import { gunFiles, shotSharing } from '@core/describe'
 import { codeOf, idCodes, type IdCode } from '@core/idpack'
 import { bankSummary, stereoPairs, streamSummary, streamUsage, type BankSummary, type SoundMap, type StreamUsage } from '@core/usage'
-import { expandToAudiences, weaponParts } from '@core/weapons'
+import { weaponParts } from '@core/weapons'
 import type { AudioData } from '@core/wav'
 import type { ExportArchivesResult, ImportReport, LibraryTemplate, PickedFile, ScanReport, StoredWeaponIndex } from '@shared/ipc'
 import { decodeAudio, player } from './audio'
@@ -35,6 +35,7 @@ import { HelpDialog } from './components/HelpDialog'
 import { IdPackDialog } from './components/IdPackDialog'
 import { Inspector } from './components/Inspector'
 import { Setup } from './components/Setup'
+import { SharedConfirm, whichSounds, type SharedChange } from './components/SharedConfirm'
 import { Sidebar } from './components/Sidebar'
 import { WeaponList } from './components/WeaponList'
 import { WeaponView } from './components/WeaponView'
@@ -62,7 +63,7 @@ export function App() {
   const [weaponIndex, setWeaponIndex] = useState<StoredWeaponIndex | null>(null)
   const [tab, setTab] = useState<Tab>('weapons')
   const [weaponName, setWeaponName] = useState<string | null>(null)
-  const [sameForEveryone, setSameForEveryone] = useState(true)
+  const [sharedChange, setSharedChange] = useState<SharedChange | null>(null)
   const [library, setLibrary] = useState<LibraryTemplate[]>([])
   const [loaded, setLoaded] = useState<Map<string, LoadedTemplate>>(new Map())
   const [loadErrors, setLoadErrors] = useState<Map<string, string>>(new Map())
@@ -306,12 +307,29 @@ export function App() {
 
   const pickSources = async (): Promise<SourceEntry[]> => addSourceFiles(await window.api.pickAudioFiles())
 
-  /** In the weapon view, a part can also stand for the same part of the other audience. */
-  const targetsFor = (refs: StreamRef[]): StreamRef[] => {
-    if (tab !== 'weapons' || !sameForEveryone || !index || !weapon) return refs
-    const expanded = expandToAudiences(index, weapon, refs).map((p) => ({ pack: p.pack, file: p.bank, streamId: p.streamId }))
-    const keys = new Set(expanded.map(refKey))
-    return [...expanded, ...refs.filter((r) => !keys.has(refKey(r)))]
+  /** The selected files other guns fire too (gunshot, report, echo…), and those guns. */
+  const sharedIn = (refs: StreamRef[]): { refs: StreamRef[]; guns: string[] } => {
+    if (tab !== 'weapons') return { refs: [], guns: [] }
+    const wanted = new Set(refs.map(refKey))
+    const shared: StreamRef[] = []
+    const guns = new Set<string>()
+    for (const section of gunSections) {
+      for (const f of section.files) {
+        const ref = { pack: f.pack, file: f.bank, streamId: f.streamId }
+        const others = shotSharing(f)
+        if (!others.length || !wanted.has(refKey(ref))) continue
+        if (!shared.some((r) => refKey(r) === refKey(ref))) shared.push(ref)
+        others.forEach((o) => guns.add(o.gun))
+      }
+    }
+    return { refs: shared, guns: [...guns].sort((a, b) => a.localeCompare(b)) }
+  }
+
+  /** Changes the selection, asking first when that would also change other guns' shots. */
+  const guarded = (refs: StreamRef[], what: string, apply: (refs: StreamRef[]) => void): void => {
+    const shared = sharedIn(refs)
+    if (!shared.refs.length) return apply(refs)
+    setSharedChange({ what, refs, shared: shared.refs, guns: shared.guns, apply })
   }
 
   const pairsOf = (pack: string, file: string) => {
@@ -322,15 +340,17 @@ export function App() {
   const assign = (sourceId: string, refs: StreamRef[], sourceOverride?: SourceEntry): void => {
     const src = sourceOverride ?? sources.get(sourceId)
     if (!src) return
-    const targets = targetsFor(refs).filter((r) => {
+    guarded(refs, `Replace with ${src.info.fileName}`, (chosen) => assignNow(src, chosen))
+  }
+
+  const assignNow = (src: SourceEntry, refs: StreamRef[]): void => {
+    const targets = refs.filter((r) => {
       const t = loaded.get(bankKey(r.pack, r.file))
       return !t || t.summaries.find((s) => s.id === r.streamId)?.editable !== false
     })
     if (!targets.length) return notify('error', 'None of the selected sounds can be replaced.')
     const prev = focus ? findAssignment(project, focus) : undefined
     setProject((p) => assignAcross(p, targets, src.info, prev?.action === 'replace' ? prev.shape : DEFAULT_SHAPE, pairsOf))
-    const extra = targets.length - refs.length
-    if (extra > 0) notify('info', `Also applied to ${extra} matching ${extra === 1 ? 'sound' : 'sounds'} others hear.`)
   }
 
   const dropFilesOnStreams = async (files: File[], refs: StreamRef[]): Promise<void> => {
@@ -535,6 +555,8 @@ export function App() {
     const u = usageOf(usageRef.pack, usageRef.file, usageRef.streamId)
     return u ? streamSummary(u) || undefined : undefined
   })()
+  const sharedSelection = sharedIn(selection)
+
   const inspector = (
     <Inspector
       templates={loaded}
@@ -545,10 +567,11 @@ export function App() {
       sources={sources}
       playing={playing}
       context={
-        tab === 'weapons' && sameForEveryone && selection.length > 0 && targetsFor(selection).length > selection.length ? (
-          <p className="note small">
-            Also changes {targetsFor(selection).length - selection.length} matching{' '}
-            {targetsFor(selection).length - selection.length === 1 ? 'sound' : 'sounds'} that others hear.
+        sharedSelection.refs.length > 0 ? (
+          <p className="note small" title={sharedSelection.guns.join(', ')}>
+            {whichSounds(sharedSelection.refs.length, selection.length)} also part of the shot of{' '}
+            {sharedSelection.guns.length === 1 ? sharedSelection.guns[0] : `${sharedSelection.guns.length} other guns`}. You'll be asked
+            before they change.
           </p>
         ) : undefined
       }
@@ -565,9 +588,9 @@ export function App() {
       onAssign={(id, refs) => assign(id, refs)}
       onAddSources={pickSources}
       onDropFiles={(files, refs) => void dropFilesOnStreams(files, refs)}
-      onSilence={(refs) => setProject((p) => silenceAcross(p, targetsFor(refs)))}
-      onReset={(refs) => setProject((p) => clearAcross(p, targetsFor(refs)))}
-      onShape={(refs, patch: Partial<ShapeSettings>) => setProject((p) => updateShapeAcross(p, targetsFor(refs), patch))}
+      onSilence={(refs) => guarded(refs, 'Silence', (chosen) => setProject((p) => silenceAcross(p, chosen)))}
+      onReset={(refs) => setProject((p) => clearAcross(p, refs))}
+      onShape={(refs, patch: Partial<ShapeSettings>) => setProject((p) => updateShapeAcross(p, refs, patch))}
       onChannel={(ref, ch: ChannelMode) => setProject((p) => setChannel(p, ref.pack, ref.file, ref.streamId, ch))}
       onLink={(l, r) => setProject((p) => linkPair(p, l.pack, l.file, l.streamId, r.streamId))}
       onUnlink={(ref) => setProject((p) => unlinkPair(p, ref.pack, ref.file, ref.streamId))}
@@ -668,8 +691,6 @@ export function App() {
               selection={selection}
               focus={focus}
               playing={playing}
-              sameForEveryone={sameForEveryone}
-              onSameForEveryone={setSameForEveryone}
               onSelect={select}
               onPlayPart={play}
               onDropFiles={(files, refs) => void dropFilesOnStreams(files, refs)}
@@ -766,6 +787,13 @@ export function App() {
         />
       )}
       {dialog === 'rescan' && <Setup mode="rescan" onDone={(r) => void onScanned(r)} onClose={() => setDialog(null)} />}
+      {sharedChange && (
+        <SharedConfirm
+          change={sharedChange}
+          onClose={() => setSharedChange(null)}
+          onNothingLeft={() => notify('error', 'Every selected sound is shared with other guns, so nothing was changed.')}
+        />
+      )}
     </div>
   )
 }

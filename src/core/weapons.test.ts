@@ -1,14 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import {
-  audienceVariants,
-  expandToAudiences,
-  fireRate,
-  leaves,
-  prettyWeaponName,
-  variantAudience,
-  weaponLabel,
-  weaponParts
-} from './weapons'
+import { audienceVariants, fireRate, leaves, prettyWeaponName, variantAudience, weaponLabel, weaponParts } from './weapons'
 import { fixtureIndex } from './weapons.fixture'
 import { joaat } from './hash'
 
@@ -38,14 +29,6 @@ describe('weapons', () => {
     expect(weaponParts(index, pistol.variants[1])).toEqual([{ role: 'fire', pack: 'resident', bank: 'weapons.awc', streamId: 0x16ef0ea5 }])
     // the SMG's bank isn't in the game files
     expect(weaponParts(index, smg.variants[0])).toEqual([])
-  })
-
-  it('extends a part to the same role in every variant', () => {
-    const out = expandToAudiences(index, pistol, [{ pack: 'weapons_player', file: 'ptl_pistol.awc', streamId: 0x0aa87351 }])
-    expect(out.map((p) => `${p.role} ${p.pack}/${p.bank}:${p.streamId.toString(16)}`).sort()).toEqual([
-      'fire resident/weapons.awc:16ef0ea5',
-      'fire weapons_player/ptl_pistol.awc:aa87351'
-    ])
   })
 
   it('tells your gun from what others hear', () => {
