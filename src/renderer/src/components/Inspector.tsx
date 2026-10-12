@@ -240,7 +240,9 @@ export function Inspector(props: Props) {
             Reset to original
           </button>
         </div>
-        <p className="muted small">Or drop an audio file here (WAV, MP3, OGG, FLAC). Stereo files fill L/R pairs automatically.</p>
+        <p className="muted small">
+          Or drop an audio file here (WAV, MP3, OGG, FLAC). A stereo file fills both sides of an L/R pair when you select both.
+        </p>
       </section>
 
       {shape && (

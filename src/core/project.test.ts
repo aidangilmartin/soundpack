@@ -37,9 +37,9 @@ describe('project', () => {
     expect(findBank(p, P, F)).toBeUndefined()
   })
 
-  it('splits a stereo source over an L/R pair', () => {
+  it('splits a stereo source over an L/R pair when both sides are selected', () => {
     const pairs = [{ left: 10, right: 11 }]
-    const p = assignSource(newProject(), P, F, [11, 20], stereo, DEFAULT_SHAPE, pairs)
+    const p = assignSource(newProject(), P, F, [10, 11, 20], stereo, DEFAULT_SHAPE, pairs)
     const a = findBank(p, P, F)!.assignments
     expect(a.map((x) => [x.streamId, x.shape.channel])).toEqual([
       [10, 'left'],
@@ -48,8 +48,21 @@ describe('project', () => {
     ])
   })
 
+  it('changes exactly the selected streams, never the other side of a pair', () => {
+    const pairs = [{ left: 10, right: 11 }]
+    const p = assignSource(newProject(), P, F, [11, 20], stereo, DEFAULT_SHAPE, pairs)
+    const a = findBank(p, P, F)!.assignments
+    // one side selected: it takes its own channel of the stereo file; the left stream stays original
+    expect(a.map((x) => [x.streamId, x.shape.channel])).toEqual([
+      [11, 'right'],
+      [20, 'mix']
+    ])
+    const one = assignSource(newProject(), P, F, [10], stereo, DEFAULT_SHAPE, pairs)
+    expect(findBank(one, P, F)!.assignments.map((x) => x.streamId)).toEqual([10])
+  })
+
   it('keeps assigned channels when shaping is updated', () => {
-    let p = assignSource(newProject(), P, F, [10], stereo, DEFAULT_SHAPE, [{ left: 10, right: 11 }])
+    let p = assignSource(newProject(), P, F, [10, 11], stereo, DEFAULT_SHAPE, [{ left: 10, right: 11 }])
     p = updateShape(p, P, F, [10, 11], { gainDb: -3, channel: 'mix' })
     const a = findBank(p, P, F)!.assignments
     expect(a.every((x) => x.shape.gainDb === -3)).toBe(true)

@@ -23,7 +23,7 @@ A desktop app for making **GTA V / FiveM gun sound packs**. It works from a **va
   - Choose how far away you hear it (at the gun up to 300 m), outdoors, indoors or in a tunnel, and who fires it (you, or another player/NPC). Single shots or a burst at the gun's fire rate. Automatic guns play their own rapid-fire sound for every shot, single or burst.
   - It names what it had to approximate (the engine's reverb, where echoes come from…).
   - **Compare with in-game recording…** loads a recording of the real gun (OBS, Audacity…), lines it up with the preview and lets you A/B them.
-- **Replaces sounds** with WAV, MP3, OGG, FLAC or M4A. Drop a file onto a part or assign it to a selection. A stereo file fills an L/R stream pair automatically. You can also silence or reset sounds.
+- **Replaces sounds** with WAV, MP3, OGG, FLAC or M4A. Drop a file onto a part or assign it to a selection: only the selected sounds change. A stereo file fills both sides of an L/R stream pair when you select both. You can also silence or reset sounds.
 - **Shapes the audio:**
   - trim leading silence so shots fire instantly
   - start offset and max length

@@ -69,8 +69,9 @@ function upsert(list: Assignment[], items: Assignment[]): Assignment[] {
 }
 
 /**
- * Assigns a source to streams. A stereo source on a stream that's part of an L/R pair fills
- * both sides (left channel → left stream, right channel → right stream).
+ * Assigns a source to exactly the given streams. A stereo source on a stream that's one side of an
+ * L/R pair takes that side's channel (left channel → left stream, right channel → right stream), so
+ * selecting both sides fills the pair; the other side is never changed unless it's selected too.
  */
 export function assignSource(
   project: Project,
@@ -84,13 +85,8 @@ export function assignSource(
   const items = new Map<number, Assignment>()
   for (const id of streamIds) {
     const p = source.channels >= 2 ? pairOf(pairs, id) : undefined
-    if (p) {
-      items.set(p.pair.left, { streamId: p.pair.left, action: 'replace', sourceId: source.id, shape: { ...shape, channel: 'left' } })
-      items.set(p.pair.right, { streamId: p.pair.right, action: 'replace', sourceId: source.id, shape: { ...shape, channel: 'right' } })
-    } else if (!items.has(id)) {
-      const channel = source.channels >= 2 && shape.channel !== 'mix' ? shape.channel : 'mix'
-      items.set(id, { streamId: id, action: 'replace', sourceId: source.id, shape: { ...shape, channel } })
-    }
+    const channel = p ? p.side : source.channels >= 2 && shape.channel !== 'mix' ? shape.channel : 'mix'
+    items.set(id, { streamId: id, action: 'replace', sourceId: source.id, shape: { ...shape, channel } })
   }
   return updateBank(project, pack, file, (b) => ({ ...b, assignments: upsert(b.assignments, [...items.values()]) }))
 }
